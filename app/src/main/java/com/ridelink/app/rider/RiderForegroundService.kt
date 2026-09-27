@@ -15,10 +15,15 @@ import com.ridelink.app.R
 import com.ridelink.app.RideLinkApplication
 import com.ridelink.app.nearby.NearbyState
 import com.ridelink.app.nearby.formatPeerName
+import com.ridelink.app.notifications.ConnectionNotificationBuilder
+import com.ridelink.app.notifications.ConnectionNotificationHost
+import com.ridelink.app.notifications.ConnectionRole
+import com.ridelink.app.voicechat.VoiceChatState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 
@@ -30,7 +35,14 @@ import kotlinx.coroutines.launch
  * policy, not something this app can opt out of while still surviving in
  * the background), so this posts two distinct notifications:
  *
- * - A quiet ongoing status notification (required, kept minimal).
+ * - The single persistent connected-status notification (see
+ *   ConnectionNotificationBuilder for its full per-state table): quiet
+ *   while not yet paired, high-priority with voice chat action buttons once
+ *   connected. Also implements [ConnectionNotificationHost] so
+ *   VoiceChatSession can add/remove this service's "microphone"
+ *   foreground-service type for the duration of a call -- there's still
+ *   exactly one notification and one service during a call, not a second
+ *   one layered on top.
  * - A separate, actually-alerting one-shot notification each time a new
  *   route arrives, whose tap opens MainActivity (not Maps directly) --
  *   launching your own app from a notification tap has no
@@ -40,7 +52,7 @@ import kotlinx.coroutines.launch
  *   The fully-automatic direct launch (no tap) is still attempted too --
  *   free when it works -- but this notification is the guaranteed path.
  */
-class RiderForegroundService : Service() {
+class RiderForegroundService : Service(), ConnectionNotificationHost {
 
     private var serviceScope: CoroutineScope? = null
 
@@ -61,17 +73,42 @@ class RiderForegroundService : Service() {
         ServiceCompat.startForeground(
             this,
             STATUS_NOTIFICATION_ID,
-            buildStatusNotification(NearbyState.Idle),
+            ConnectionNotificationBuilder.build(
+                this, ConnectionRole.RIDER, NearbyState.Idle, VoiceChatState.IDLE, isMuted = false, alert = false,
+            ),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
         )
         RiderSession.start(applicationContext)
+        ConnectionNotificationHost.current = this
 
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         serviceScope = scope
-        scope.launch {
-            RiderSession.connectionState.collect { state ->
-                NotificationManagerCompat.from(this@RiderForegroundService)
-                    .notify(STATUS_NOTIFICATION_ID, buildStatusNotification(state))
+        val voiceChat = RiderSession.voiceChat
+        if (voiceChat != null) {
+            scope.launch {
+                // Only re-alert on the two moments actually worth interrupting
+                // for: just paired, and an incoming call -- every other update
+                // (offering, active, mute toggling) posts quietly.
+                var wasConnected = false
+                var wasIncomingOffer = false
+                combine(
+                    RiderSession.connectionState,
+                    voiceChat.callState,
+                    voiceChat.isMuted,
+                ) { nearbyState, callState, muted -> Triple(nearbyState, callState, muted) }
+                    .collect { (nearbyState, callState, muted) ->
+                        val nowConnected = nearbyState is NearbyState.Connected
+                        val nowIncomingOffer = callState == VoiceChatState.INCOMING_OFFER
+                        val alert = (nowConnected && !wasConnected) || (nowIncomingOffer && !wasIncomingOffer)
+                        NotificationManagerCompat.from(this@RiderForegroundService).notify(
+                            STATUS_NOTIFICATION_ID,
+                            ConnectionNotificationBuilder.build(
+                                this@RiderForegroundService, ConnectionRole.RIDER, nearbyState, callState, muted, alert,
+                            ),
+                        )
+                        wasConnected = nowConnected
+                        wasIncomingOffer = nowIncomingOffer
+                    }
             }
         }
         scope.launch {
@@ -89,6 +126,7 @@ class RiderForegroundService : Service() {
 
     private fun stopListening() {
         RiderSession.reset()
+        if (ConnectionNotificationHost.current === this) ConnectionNotificationHost.current = null
         serviceScope?.cancel()
         serviceScope = null
         NotificationManagerCompat.from(this).apply {
@@ -101,6 +139,7 @@ class RiderForegroundService : Service() {
 
     override fun onDestroy() {
         RiderSession.reset()
+        if (ConnectionNotificationHost.current === this) ConnectionNotificationHost.current = null
         serviceScope?.cancel()
         serviceScope = null
         NotificationManagerCompat.from(this).apply {
@@ -110,32 +149,32 @@ class RiderForegroundService : Service() {
         super.onDestroy()
     }
 
-    private fun buildStatusNotification(state: NearbyState): Notification {
-        val text = when (state) {
-            is NearbyState.Idle, is NearbyState.Searching ->
-                "Listening for your pillion's route..."
-            is NearbyState.Connected ->
-                "Connected to ${formatPeerName(state.endpointName)}"
-            is NearbyState.Disconnected ->
-                "Disconnected -- reopen RideLink to reconnect"
-        }
-
-        val pendingIntent = PendingIntent.getActivity(
+    override fun enterCallType() {
+        ServiceCompat.startForeground(
             this,
-            REQUEST_CODE_STATUS,
-            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            STATUS_NOTIFICATION_ID,
+            ConnectionNotificationBuilder.build(
+                this,
+                ConnectionRole.RIDER,
+                RiderSession.connectionState.value,
+                VoiceChatState.ACTIVE,
+                RiderSession.voiceChat?.isMuted?.value ?: false,
+                alert = false,
+            ),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
         )
+    }
 
-        return NotificationCompat.Builder(this, RideLinkApplication.RIDER_STATUS_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification_rider)
-            .setContentTitle("RideLink")
-            .setContentText(text)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setContentIntent(pendingIntent)
-            .build()
+    override fun exitCallType() {
+        ServiceCompat.startForeground(
+            this,
+            STATUS_NOTIFICATION_ID,
+            ConnectionNotificationBuilder.build(
+                this, ConnectionRole.RIDER, RiderSession.connectionState.value,
+                VoiceChatState.IDLE, isMuted = false, alert = false,
+            ),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+        )
     }
 
     private fun buildRouteNotification(link: String, peerName: String?): Notification {
@@ -169,7 +208,6 @@ class RiderForegroundService : Service() {
     companion object {
         private const val STATUS_NOTIFICATION_ID = 1001
         private const val ROUTE_NOTIFICATION_ID = 1002
-        private const val REQUEST_CODE_STATUS = 0
         private const val REQUEST_CODE_ROUTE = 1
         private const val ACTION_STOP_LISTENING = "com.ridelink.app.rider.STOP_LISTENING"
 

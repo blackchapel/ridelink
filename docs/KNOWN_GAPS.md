@@ -32,6 +32,32 @@ part of the change that touches them -- see `CLAUDE.md`.
   quality) -- an intentional, conservative starting point given the
   Bluetooth-at-range throughput unknown, not yet revisited.
 
+## Connected-status notification / dynamic foreground-service type
+
+- **Dynamic foreground-service-type change is unverified on a real
+  device.** `RiderForegroundService`/`PillionForegroundService` now add
+  the `microphone` type to themselves mid-life (re-invoking
+  `startForeground()`) for the duration of a call, instead of running a
+  separate `VoiceCallForegroundService` the way this app used to -- a
+  deliberate reversal of an earlier decision that avoided this
+  specifically for lack of real-device verification. If it doesn't
+  behave correctly (the connection destabilizes when a call starts/ends,
+  or the OS rejects/ignores the type change on some version/OEM), the
+  documented fallback is to reintroduce a second, call-scoped foreground
+  service rather than assume the single-service design forward.
+- **Channel-switch + `setOnlyAlertOnce` alerting behavior is not
+  documented with certainty** across Android versions/OEMs -- needs
+  real-device confirmation that "just connected" and "incoming offer"
+  actually produce a heads-up alert rather than a silent update.
+- **An unexpected mid-ride disconnect stays quiet** (reverts to the
+  low-priority pre-connection text) rather than alerting -- a deliberate
+  default matching prior behavior, not something the user has confirmed
+  either way.
+- **No `NotificationCompat.CallStyle`/full-screen-intent** for the
+  incoming-offer moment -- deliberately deferred (see
+  `docs/SYSTEM_STATE.md`); the plain three-button notification alert may
+  feel weaker than a real incoming-call UI in practice.
+
 ## Build / process
 
 - **No automated tests** (unit or instrumented) anywhere in the project.

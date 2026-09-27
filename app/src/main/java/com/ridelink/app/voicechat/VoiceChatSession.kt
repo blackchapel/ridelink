@@ -8,6 +8,7 @@ import com.ridelink.app.nearby.AudioChunk
 import com.ridelink.app.nearby.ControlMessage
 import com.ridelink.app.nearby.NearbyManager
 import com.ridelink.app.nearby.NearbyState
+import com.ridelink.app.notifications.ConnectionNotificationHost
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -144,7 +145,7 @@ class VoiceChatSession(private val context: Context, private val nearbyManager: 
     }
 
     private fun beginCall() {
-        VoiceCallForegroundService.start(context)
+        ConnectionNotificationHost.current?.enterCallType()
         requestAudioFocusAndMode()
         expectedSeq = 0
         audioPlayback.start()
@@ -157,7 +158,7 @@ class VoiceChatSession(private val context: Context, private val nearbyManager: 
         audioCapture.stop()
         audioPlayback.stop()
         abandonAudioFocusAndMode()
-        VoiceCallForegroundService.stop(context)
+        ConnectionNotificationHost.current?.exitCallType()
         _isMuted.value = false
         _callState.value = VoiceChatState.IDLE
     }

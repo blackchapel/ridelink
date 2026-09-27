@@ -26,10 +26,13 @@ For the technical architecture and module-by-module breakdown, see
    RideLink itself is backgrounded (a foreground service keeps it
    listening) or the rider's phone is locked. A tapped "new route"
    notification also opens it, as a second path.
-4. Once connected, either phone can start a **voice chat** call (the
-   other side must accept). While active: mute toggle, and an output
-   picker (speaker / earpiece / Bluetooth). Audio flows over the same
-   Nearby Connections link -- still no internet or mobile data.
+4. Once paired, both phones show a high-priority persistent notification
+   with **voice chat controls** -- Voice Chat / Disconnect while idle,
+   Accept / Decline / Disconnect on an incoming call, Mute / End /
+   Disconnect during an active call -- so a call can be started, answered,
+   muted, or ended without opening the app at all. The in-app controls add
+   an output picker too (speaker / earpiece / Bluetooth). Audio flows over
+   the same Nearby Connections link -- still no internet or mobile data.
 5. Light/dark theme toggle in the header, persisted across restarts
    (defaults to the system theme on first launch).
 
@@ -95,13 +98,28 @@ physical Android devices:
    matters), grant Bluetooth/nearby-device permissions when prompted, and
    enable Bluetooth/Wi-Fi if asked.
 2. Device A: "I'm the Pillion". Device B: "I'm the Rider". Both screens
-   should show "Connected" within a few seconds.
+   should show "Connected" within a few seconds, and both devices' status
+   bar should now show the high-priority connected notification with
+   `[Voice Chat] [Disconnect]`.
 3. On Device A, open Google Maps, build a route, Share -> RideLink.
    Device A shows "Route sent". Device B should automatically launch
    Google Maps navigation with no further taps -- try this again with
    Device B's screen off/RideLink backgrounded, and again while it's
    already mid-navigation from a previous share.
-4. Voice chat: from either device, start a voice chat; the other device
-   should show an incoming-call prompt. Accept, confirm audio flows both
-   ways, try mute, and try switching output (speaker/earpiece/Bluetooth
-   if a headset is paired). Repeat with the other device as the caller.
+4. Voice chat, from the **notification** (not the in-app buttons): tap
+   Voice Chat on one device -- its notification should switch to
+   `[Waiting to accept...] [Disconnect]`; the other device's notification
+   should alert and show `[Accept] [Decline] [Disconnect]`. Tap Accept --
+   both notifications should switch to `[Mute/Unmute] [End] [Disconnect]`
+   with no further taps needed, and audio should flow both ways. Try Mute
+   (label should flip to Unmute) and End (both sides should return to
+   `[Voice Chat] [Disconnect]`). Separately, confirm tapping the "waiting"
+   button while offering cancels the call, and that Decline on an
+   incoming offer reverts the caller's notification the same way.
+   Repeat with the other device as the caller.
+5. Disconnect, from the notification, at each of the above stages (idle,
+   offering, incoming, active): the Nearby connection should tear down
+   and the notification should disappear on the tapped device.
+6. Also confirm the existing in-app voice chat controls
+   (`VoiceChatControls`) still work independently of the notification,
+   including the output picker (speaker/earpiece/Bluetooth).

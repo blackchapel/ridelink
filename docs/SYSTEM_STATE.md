@@ -39,8 +39,11 @@ Two roles, one pairing, no server anywhere:
 - `ShareReceiverActivity.kt` -- the `ACTION_SEND` target that appears in
   Google Maps' share sheet; captures the shared link for the Pillion
   side.
-- `RideLinkApplication.kt` -- registers the app's three notification
-  channels (rider listening status, new-route alert, voice-call status).
+- `RideLinkApplication.kt` -- registers the app's notification channels:
+  per-role pre-connection status (LOW), new-route alert (HIGH), and the
+  shared connected/voice-chat-controls channel (HIGH, see `notifications/`
+  below). Also deletes the old separate call-active channel on startup so
+  existing installs don't keep an orphaned entry.
 - `nearby/NearbyManager.kt` -- thin wrapper around Nearby Connections.
   Owns the connection lifecycle/state (`NearbyState`), a small tagged
   `ControlMessage` protocol over BYTES payloads (route link,
@@ -48,18 +51,44 @@ Two roles, one pairing, no server anywhere:
   sequence-numbered audio-chunk protocol (`AudioChunk`,
   `sendAudioChunk`/`incomingAudioChunks`) -- see Voice chat below for why
   audio doesn't use Nearby's STREAM payload type.
+- `notifications/` -- the single persistent notification shown per role,
+  both pre- and post-connection:
+  - `ConnectionNotificationBuilder.kt` -- stateless; builds the
+    notification for the current `NearbyState` + `VoiceChatState` + mute,
+    per role. Quiet/LOW while not yet connected; HIGH with action buttons
+    once connected (`[Voice Chat] [Disconnect]` idle, `[Waiting to
+    accept...] [Disconnect]` offering -- tapping it cancels the offer,
+    `[Accept] [Decline] [Disconnect]` incoming, `[Mute/Unmute] [End]
+    [Disconnect]` active). Callers decide per-update whether it should
+    alert (`setOnlyAlertOnce`) by comparing against the previous state --
+    only "just connected" and "incoming offer" do.
+  - `NotificationActionReceiver.kt` -- manifest-registered
+    `BroadcastReceiver` handling every button tap (offer/cancel/accept/
+    decline/mute-toggle/end/disconnect), dispatched to the tapped role's
+    `RiderSession`/`PillionSession`. Disconnect routes through the
+    owning service's stop-intent (not a bare `reset()`), since only that
+    also cancels the notification and stops the service.
+  - `ConnectionNotificationHost.kt` -- tiny interface + a single
+    `current` holder, implemented by whichever role's foreground service
+    is running, so `VoiceChatSession` can trigger the microphone
+    foreground-service-type change (see Voice chat below) without
+    depending on either service class directly.
 - `permissions/PermissionsGate.kt` -- runtime permission + Bluetooth/
   Wi-Fi-enabled gating shared by both roles before any Nearby call is
   made.
-- `pillion/` -- `PillionViewModel`/`PillionScreen`. `PillionSession` is
-  application-scoped (survives switching away to Google Maps and back)
-  and holds the `NearbyManager` + `VoiceChatSession` for this role.
+- `pillion/` -- `PillionViewModel`/`PillionScreen`/`PillionSession`/
+  `PillionForegroundService`. Mirrors `rider/` below (added so voice chat
+  -- and the connected-status notification -- survives Pillion
+  backgrounding too, not just Rider's).
 - `rider/` -- `RiderViewModel`/`RiderScreen`/`RiderSession`/
   `RiderForegroundService`. `RiderForegroundService`
-  (`foregroundServiceType="connectedDevice"`) is what keeps the Rider's
-  process alive and able to keep launching Maps while backgrounded; it's
-  the thing that must be running for the app's core promise ("rider
-  never has to touch the phone again") to hold.
+  (`foregroundServiceType="connectedDevice|microphone"`) is what keeps
+  the Rider's process alive and able to keep launching Maps while
+  backgrounded; it's the thing that must be running for the app's core
+  promise ("rider never has to touch the phone again") to hold. Also
+  hosts the connected-status notification (see `notifications/` above)
+  and implements `ConnectionNotificationHost` to add/remove its own
+  `microphone` type for the duration of a call.
 - `voicechat/` -- real-time voice chat, layered on top of an
   already-connected `NearbyManager`:
   - `AudioPipeline.kt` -- `AudioCapture` (AudioRecord, 8kHz mono PCM16,
@@ -73,14 +102,25 @@ Two roles, one pairing, no server anywhere:
     (`VoiceChatState`), mute, and the sequence-number gap-skip receive
     policy (stale/duplicate chunks dropped, gaps jumped over rather than
     waited for -- see `docs/KNOWN_GAPS.md` for the trade-off this
-    implies).
-  - `VoiceCallForegroundService.kt` -- minimal foreground service held
-    only for the duration of an active call
-    (`foregroundServiceType="microphone"`), deliberately separate from
-    `RiderForegroundService`.
-  - `VoiceChatControls.kt` -- shared Compose UI for both roles.
+    implies). `beginCall()`/`endCallLocally()` call
+    `ConnectionNotificationHost.current?.enterCallType()`/`exitCallType()`
+    -- there's no separate call-specific foreground service anymore (see
+    below).
+  - `VoiceChatControls.kt` -- shared in-app Compose UI for both roles
+    (offer/accept/decline/mute/end), independent of and in addition to
+    the notification controls above.
 - `ui/theme/` -- `Theme.kt` (Compose theme) and `ThemePreferences.kt`
   (persisted light/dark choice, defaulting to system theme).
+
+**Note on the dynamic foreground-service-type change**: `RiderForegroundService`/
+`PillionForegroundService` each declare the superset of types they may use
+(`connectedDevice|microphone`) and re-invoke `startForeground()` on the same
+notification ID to add/remove the active `microphone` type for the
+duration of a call, rather than running a second, separate foreground
+service the way this app used to (a deleted `VoiceCallForegroundService`).
+This is a deliberate reversal of an earlier, more cautious design that
+avoided dynamic type changes specifically for lack of real-device
+verification -- see `docs/KNOWN_GAPS.md`.
 
 ## Release pipeline
 
