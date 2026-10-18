@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Compact collapsed-notification content for the "connected, idle" state.
+     Shown via DecoratedCustomViewStyle + setCustomContentView() so the
+     Voice Chat/Disconnect buttons are visible without expanding: unlike a
+     plain notification's addAction() buttons, which Android only renders
+     once the notification is expanded. This is the one state that can't
+     use NotificationCompat.CallStyle instead (see
+     ConnectionNotificationBuilder), since it isn't a "call".
+
+     The system draws its own header row (app icon/name/timestamp) above
+     this, so this only needs to fit the ~48dp collapsed-view height
+     budget: one row, title and both buttons side by side, no stacking.
+     Text styles are the AndroidX-provided TextAppearance.Compat.Notification.*
+     set, which is Android's own recommended way to keep custom-layout text
+     legible against the notification shade's dynamic light/dark
+     background (plain color attributes don't reliably adapt the same way
+     here, since RemoteViews render in the System UI process, not this
+     app's). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="4dp"
+    android:paddingEnd="0dp">
+
+    <TextView
+        android:id="@+id/notification_idle_title"
+        style="@style/TextAppearance.Compat.Notification.Title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:singleLine="true"
+        android:ellipsize="end" />
+
+    <Button
+        android:id="@+id/notification_idle_voice_chat"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="0dp"
+        android:minHeight="0dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:textAllCaps="false"
+        android:textSize="13sp"
+        android:text="Voice Chat" />
+
+    <Button
+        android:id="@+id/notification_idle_disconnect"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="0dp"
+        android:minHeight="0dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:textAllCaps="false"
+        android:textSize="13sp"
+        android:text="Disconnect" />
+
+</LinearLayout>

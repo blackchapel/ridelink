@@ -53,10 +53,23 @@ part of the change that touches them -- see `CLAUDE.md`.
   low-priority pre-connection text) rather than alerting -- a deliberate
   default matching prior behavior, not something the user has confirmed
   either way.
-- **No `NotificationCompat.CallStyle`/full-screen-intent** for the
-  incoming-offer moment -- deliberately deferred (see
-  `docs/SYSTEM_STATE.md`); the plain three-button notification alert may
-  feel weaker than a real incoming-call UI in practice.
+- **`NotificationCompat.CallStyle`'s always-visible-actions behavior is
+  OS-native only on API 31+** (see `docs/SYSTEM_STATE.md`); below that,
+  androidx's compat shim falls back to an ordinary notification needing
+  expansion. Accepted as fine since both of the user's test devices are
+  confirmed API 31+ -- would regress on an older device.
+- **The idle-state custom notification layout
+  (`res/layout/notification_idle_actions.xml`) is visually unverified on
+  a real device.** It packs a title plus two buttons into one row within
+  the ~48dp collapsed-notification height budget -- the single
+  highest-risk piece of the CallStyle/custom-layout notification work,
+  since it can't be checked without installing on a real device/OEM
+  skin. Watch for clipped/truncated text or cramped buttons.
+- **No full-screen-intent for the incoming-offer moment** -- deliberately
+  deferred; the CallStyle incoming-call notification (see
+  `docs/SYSTEM_STATE.md`) is the current experience, which is stronger
+  than a plain notification alert but still not a true incoming-call
+  full-screen UI.
 
 ## Build / process
 

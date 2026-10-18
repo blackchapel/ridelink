@@ -59,9 +59,21 @@ Two roles, one pairing, no server anywhere:
     once connected (`[Voice Chat] [Disconnect]` idle, `[Waiting to
     accept...] [Disconnect]` offering -- tapping it cancels the offer,
     `[Accept] [Decline] [Disconnect]` incoming, `[Mute/Unmute] [End]
-    [Disconnect]` active). Callers decide per-update whether it should
-    alert (`setOnlyAlertOnce`) by comparing against the previous state --
-    only "just connected" and "incoming offer" do.
+    [Disconnect]` active). All four states show their buttons without
+    expanding the notification: offering/incoming/active use
+    `NotificationCompat.CallStyle` (`forOngoingCall`/`forIncomingCall`,
+    whose always-visible-actions behavior is OS-native on API 31+ -- the
+    app's current real-device floor), with the state's "primary" action
+    (cancel/decline+accept/end) wired as the style's built-in button and
+    the rest as its limited custom `addAction()` slots (1 for
+    `forIncomingCall`, 2 for `forOngoingCall`). Idle isn't a call, so
+    CallStyle can't represent it -- it uses a custom `RemoteViews` layout
+    (`res/layout/notification_idle_actions.xml`) via
+    `NotificationCompat.DecoratedCustomViewStyle` instead, the project's
+    only XML layout resource (everything else is Compose). Callers decide
+    per-update whether it should alert (`setOnlyAlertOnce`) by comparing
+    against the previous state -- only "just connected" and "incoming
+    offer" do.
   - `NotificationActionReceiver.kt` -- manifest-registered
     `BroadcastReceiver` handling every button tap (offer/cancel/accept/
     decline/mute-toggle/end/disconnect), dispatched to the tapped role's
