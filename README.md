@@ -32,6 +32,15 @@ For the technical architecture and module-by-module breakdown, see
    Nearby Connections link -- still no internet or mobile data.
 5. Light/dark theme toggle in the header, persisted across restarts
    (defaults to the system theme on first launch).
+6. A **Settings** page (header button). With **Developer mode** on it
+   shows the radio mode (Efficient / Performance), the voice codec (Opus /
+   Raw PCM) and live link/audio stats (packets/s, lost/late chunks,
+   underruns, link round-trip, output latency estimate, ...). The chosen
+   values keep applying with Developer mode off; defaults are Efficient +
+   Opus.
+7. If the link drops mid-ride, both phones automatically search again
+   (backing off up to ~30 s between tries, for about 3 minutes) instead of
+   waiting for the app to be reopened.
 
 ## Building
 
@@ -105,3 +114,21 @@ physical Android devices:
    should show an incoming-call prompt. Accept, confirm audio flows both
    ways, try mute, and try switching output (speaker/earpiece/Bluetooth
    if a headset is paired). Repeat with the other device as the caller.
+   Mute should turn the mic indicator off, and unmute should turn it back
+   on within a moment.
+5. Reconnect: with both connected, walk one phone out of range (or turn
+   its Bluetooth off and on). Both should drop to "Looking for..." and
+   reconnect on their own within a few tries.
+6. Battery / heat / latency A/B (the point of the Settings page): on both
+   phones open Settings, switch Developer mode on, and set the same Radio
+   mode and Codec on each. Run the same ~30 minute ride/route and voice
+   chat twice -- **Efficient + Opus** (the default), then **Performance +
+   Raw PCM** (the previous behaviour; each phone must be switched, then
+   End and re-pick the role). Compare RideLink's share in Android
+   Settings > Battery, how warm the phone gets, and from the Settings
+   stats: playback underruns, lost / late / trimmed chunks, link
+   round-trip, output latency estimate and which output path
+   (low-latency or standard) was granted. Watch for dropouts at riding
+   distance in Efficient mode -- if it's worse, flip back to Performance.
+   Note both phones must use the *same* Radio mode, or they won't find
+   each other.

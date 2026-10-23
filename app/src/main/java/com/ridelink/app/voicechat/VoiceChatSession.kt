@@ -4,10 +4,13 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import com.ridelink.app.nearby.AudioChunk
+import com.ridelink.app.diagnostics.LinkStats
+import com.ridelink.app.nearby.AudioPacketSink
 import com.ridelink.app.nearby.ControlMessage
 import com.ridelink.app.nearby.NearbyManager
 import com.ridelink.app.nearby.NearbyState
+import com.ridelink.app.settings.AudioCodec
+import com.ridelink.app.settings.SettingsPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,14 +28,14 @@ enum class VoiceChatState { IDLE, OFFERING, INCOMING_OFFER, ACTIVE }
  * (Pillion/Rider) is active -- not a standalone global singleton -- so it
  * naturally shares that session's connection lifetime.
  *
- * Mute is purely local: pausing the capture thread's writes is enough to
- * satisfy "stop transmitting" -- the peer's AudioTrack simply stops
- * receiving data, with no need to signal the mute state across the wire.
+ * Mute is purely local: it stops the mic (see AudioCapture) so nothing is
+ * transmitted -- the peer's AudioTrack simply stops receiving data, with no
+ * need to signal the mute state across the wire.
  */
 class VoiceChatSession(private val context: Context, private val nearbyManager: NearbyManager) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val audioManager = context.getSystemService(AudioManager::class.java)
-    private val audioCapture = AudioCapture()
+    private var audioCapture: AudioCapture? = null
     private val audioPlayback = AudioPlayback()
     val routing = AudioRoutingController(context)
 
@@ -43,12 +46,6 @@ class VoiceChatSession(private val context: Context, private val nearbyManager: 
     val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
 
     private var focusRequest: AudioFocusRequest? = null
-
-    // Next sequence number the receiver will accept -- not a reorder/wait
-    // buffer. A chunk older than this is stale and dropped; a chunk newer
-    // than expected is played immediately and jumps the pointer forward,
-    // treating the gap as skipped rather than something to wait for.
-    private var expectedSeq = 0
 
     init {
         scope.launch {
@@ -76,13 +73,6 @@ class VoiceChatSession(private val context: Context, private val nearbyManager: 
 
                     is ControlMessage.RouteLink -> Unit // not this session's concern
                 }
-            }
-        }
-        scope.launch {
-            nearbyManager.incomingAudioChunks.collect { chunk: AudioChunk ->
-                if (chunk.sequenceNumber < expectedSeq) return@collect // stale/duplicate -- drop
-                expectedSeq = chunk.sequenceNumber + 1
-                audioPlayback.submit(chunk.data)
             }
         }
         // A Nearby-level disconnect always ends any in-progress call -- there's
@@ -128,7 +118,7 @@ class VoiceChatSession(private val context: Context, private val nearbyManager: 
 
     fun setMuted(muted: Boolean) {
         _isMuted.value = muted
-        audioCapture.setMuted(muted)
+        audioCapture?.setMuted(muted)
     }
 
     /**
@@ -146,16 +136,25 @@ class VoiceChatSession(private val context: Context, private val nearbyManager: 
     private fun beginCall() {
         VoiceCallForegroundService.start(context)
         requestAudioFocusAndMode()
-        expectedSeq = 0
         audioPlayback.start()
-        audioCapture.setMuted(_isMuted.value)
-        audioCapture.start { data, seq -> nearbyManager.sendAudioChunk(seq, data, data.size) }
+        // Packets go from Nearby's callback straight into the playback queue --
+        // sequencing and decoding happen on the playback thread, not here.
+        nearbyManager.audioSink = AudioPacketSink { packet -> audioPlayback.submitPacket(packet) }
+        val codec = SettingsPreferences.get(context).codec
+        LinkStats.txCodec = if (codec == AudioCodec.OPUS) "Opus" else "Raw PCM"
+        val capture = AudioCapture(codec)
+        capture.setMuted(_isMuted.value)
+        capture.start { packet -> nearbyManager.sendAudioPacket(packet) }
+        audioCapture = capture
         _callState.value = VoiceChatState.ACTIVE
     }
 
     private fun endCallLocally() {
-        audioCapture.stop()
+        nearbyManager.audioSink = null
+        audioCapture?.stop()
+        audioCapture = null
         audioPlayback.stop()
+        routing.release()
         abandonAudioFocusAndMode()
         VoiceCallForegroundService.stop(context)
         _isMuted.value = false

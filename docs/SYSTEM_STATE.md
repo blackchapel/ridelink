@@ -15,12 +15,15 @@ Two roles, one pairing, no server anywhere:
   Google Maps navigation automatically -- no further taps needed, even if
   RideLink is backgrounded.
 - The two phones pair over Google's **Nearby Connections API**
-  (`play-services-nearby`), `Strategy.P2P_POINT_TO_POINT` -- one
-  advertiser (Pillion), one discoverer (Rider). Bluetooth/Wi-Fi only;
-  Nearby Connections itself negotiates a bandwidth upgrade (e.g.
-  BT -> Wi-Fi Direct) after the initial connection. Pairing is per-ride
-  only -- both sides re-discover fresh every session, nothing is
-  remembered device-to-device.
+  (`play-services-nearby`) -- one advertiser (Pillion), one discoverer
+  (Rider). Bluetooth/Wi-Fi only. The strategy is a Settings choice
+  (`RadioMode`): **Efficient** (default) = `Strategy.P2P_CLUSTER`, which
+  stays on a Bluetooth link; **Performance** = `Strategy.P2P_POINT_TO_POINT`,
+  where Nearby Connections may negotiate a bandwidth upgrade (e.g.
+  BT -> Wi-Fi Direct) -- the previous behaviour. Both phones must use the
+  same mode or they never discover each other. Advertising/discovery run
+  only until connected, then stop. Pairing is per-ride only -- both sides
+  re-discover fresh every session, nothing is remembered device-to-device.
 - Everything -- route link relay, voice chat signaling, voice audio --
   flows over that same Nearby Connections link. There is no backend, no
   internet/mobile-data dependency, and no third-party server involved at
@@ -44,10 +47,27 @@ Two roles, one pairing, no server anywhere:
 - `nearby/NearbyManager.kt` -- thin wrapper around Nearby Connections.
   Owns the connection lifecycle/state (`NearbyState`), a small tagged
   `ControlMessage` protocol over BYTES payloads (route link,
-  voice-chat offer/accept/decline/end), and a separate per-chunk
-  sequence-numbered audio-chunk protocol (`AudioChunk`,
-  `sendAudioChunk`/`incomingAudioChunks`) -- see Voice chat below for why
-  audio doesn't use Nearby's STREAM payload type.
+  voice-chat offer/accept/decline/end), and a separate audio-packet
+  protocol (`[tag][4-byte sequence][payload]`; tag 6 = raw PCM, tag 7 =
+  Opus; `sendAudioPacket` out, `AudioPacketSink` in) -- see Voice chat
+  below for why audio doesn't use Nearby's STREAM payload type. Radio
+  lifecycle: `startAdvertising`/`startDiscovery` are idempotent; the
+  strategy comes from `RadioMode`; advertising/discovery stop once
+  connected; `onEndpointFound` is guarded against duplicate requests; an
+  unexpected disconnect or failed attempt restarts the same role with
+  capped exponential backoff (1 s doubling to 30 s, 10 attempts, then
+  `Disconnected`). A tiny ping/pong (tags 8/9) measures link round-trip,
+  sent only while the Settings stats are open. `NearbyManager.current`
+  exposes the active manager to Settings.
+- `settings/` -- `SettingsPreferences.kt` (persists Developer mode,
+  `RadioMode`, `AudioCodec` in the same `ridelink_prefs` file as the theme)
+  and `SettingsScreen.kt` (header "Settings" button; rendered outside the
+  permissions gate). The radio mode / codec / stats controls are only
+  *shown* with Developer mode on; the saved values apply regardless.
+- `diagnostics/LinkStats.kt` -- process-wide atomic counters behind the
+  stats panel. Every hot-path update goes through `LinkStats.record {}`,
+  one volatile read when Developer mode is off. The panel samples once a
+  second, only while Settings is visible and the app is started.
 - `permissions/PermissionsGate.kt` -- runtime permission + Bluetooth/
   Wi-Fi-enabled gating shared by both roles before any Nearby call is
   made.
@@ -63,17 +83,33 @@ Two roles, one pairing, no server anywhere:
 - `voicechat/` -- real-time voice chat, layered on top of an
   already-connected `NearbyManager`:
   - `AudioPipeline.kt` -- `AudioCapture` (AudioRecord, 8kHz mono PCM16,
-    hands each ~20ms chunk straight to a callback, no internal
-    buffering) and `AudioPlayback` (AudioTrack, fed via a small bounded
-    drop-oldest queue, `PLAYBACK_QUEUE_CAPACITY = 4` / ~80ms).
+    20ms chunks framed -- and Opus-encoded when the codec setting says so
+    -- into a single packet array and handed straight to the send
+    callback; **mute actually stops the AudioRecord** and the thread waits,
+    so the mic, AEC and NS stop too) and `AudioPlayback` (AudioTrack at
+    **48kHz**, fed by a bounded drop-oldest queue of raw packets,
+    `PLAYBACK_QUEUE_CAPACITY = 4`). Nearby's callback (main thread) only
+    enqueues; the playback thread does sequencing, Opus decoding or 6x
+    upsampling of raw PCM, and the write. A standing queue is shaved: if
+    the queue never dipped below 2 over 1 s, one 20ms chunk is dropped.
+    The AudioTrack buffer is capped at 2 chunks (we never write far ahead,
+    so a bigger buffer would only add latency).
+  - `OpusCodec.kt` -- `OpusFrameEncoder`/`OpusFrameDecoder` over Concentus
+    (pure-Java Opus): 8kHz mono VOIP, ~16 kbps CBR, narrowband, low
+    complexity; decodes straight to 48kHz. A gap of up to 2 lost packets
+    is covered with the decoder's packet-loss concealment.
   - `AudioRoutingController.kt` -- speaker/earpiece/Bluetooth output
     selection (`AudioManager.setCommunicationDevice` on API 31+, legacy
-    speakerphone/SCO APIs below that).
+    speakerphone/SCO APIs below that). `release()` undoes it at call end
+    (`clearCommunicationDevice()` / stop SCO / speaker off); the in-call
+    output picker re-reads the options whenever an audio device appears or
+    disappears.
   - `VoiceChatSession.kt` -- offer/accept/decline/end state machine
-    (`VoiceChatState`), mute, and the sequence-number gap-skip receive
-    policy (stale/duplicate chunks dropped, gaps jumped over rather than
-    waited for -- see `docs/KNOWN_GAPS.md` for the trade-off this
-    implies).
+    (`VoiceChatState`), mute, and wiring of the audio pipeline for the
+    duration of a call (the codec is read from settings per call; the
+    receiver decodes whichever codec tag arrives). The sequence-number
+    gap-skip policy now lives in `AudioPlayback` -- see
+    `docs/KNOWN_GAPS.md` for the trade-off it implies.
   - `VoiceCallForegroundService.kt` -- minimal foreground service held
     only for the duration of an active call
     (`foregroundServiceType="microphone"`), deliberately separate from
@@ -149,5 +185,7 @@ Two roles, one pairing, no server anywhere:
 ## Pinned versions (as of this snapshot)
 
 AGP `8.7.2`, Kotlin `2.0.21`, Compose BOM `2024.10.01`,
-`play-services-nearby` `19.3.0`, `compileSdk`/`targetSdk` `35`,
+`play-services-nearby` `19.3.0`, Concentus (pure-Java Opus)
+`io.github.jaredmdobson:concentus:1.0.2`, `lifecycle-runtime-compose`
+`2.8.6`, `compileSdk`/`targetSdk` `35`,
 `minSdk` `26`, JDK `17`.

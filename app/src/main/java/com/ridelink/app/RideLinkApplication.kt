@@ -3,10 +3,13 @@ package com.ridelink.app
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import com.ridelink.app.diagnostics.LinkStats
+import com.ridelink.app.settings.SettingsPreferences
 
 class RideLinkApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        LinkStats.enabled = SettingsPreferences.get(this).developerMode
         val manager = getSystemService(NotificationManager::class.java)
 
         // Quiet, ongoing "service is alive" status -- required by Android's

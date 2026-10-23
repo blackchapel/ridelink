@@ -3,6 +3,7 @@ package com.ridelink.app
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,6 +36,7 @@ import com.ridelink.app.permissions.PermissionsAndRadioGate
 import com.ridelink.app.pillion.PillionScreen
 import com.ridelink.app.rider.RiderScreen
 import com.ridelink.app.rider.RiderSession
+import com.ridelink.app.settings.SettingsScreen
 import com.ridelink.app.ui.theme.RideLinkTheme
 import com.ridelink.app.ui.theme.ThemePreferences
 
@@ -94,6 +97,8 @@ private fun RideLinkApp() {
     RideLinkTheme(isDarkTheme = isDarkTheme) {
         Surface(modifier = Modifier.fillMaxSize()) {
             var role by remember { mutableStateOf<Role?>(null) }
+            var showSettings by remember { mutableStateOf(false) }
+            BackHandler(enabled = showSettings) { showSettings = false }
 
             Column(
                 modifier = Modifier
@@ -106,12 +111,18 @@ private fun RideLinkApp() {
                         isDarkTheme = !isDarkTheme
                         themePreferences.setDarkTheme(isDarkTheme)
                     },
+                    onOpenSettings = { showSettings = true },
                 )
-                PermissionsAndRadioGate {
-                    when (role) {
-                        null -> RolePickerScreen(onRoleSelected = { role = it })
-                        Role.PILLION -> PillionScreen(onBack = { role = null })
-                        Role.RIDER -> RiderScreen(onBack = { role = null })
+                if (showSettings) {
+                    // Outside the permissions gate: nothing here needs a radio or permission.
+                    SettingsScreen(onBack = { showSettings = false })
+                } else {
+                    PermissionsAndRadioGate {
+                        when (role) {
+                            null -> RolePickerScreen(onRoleSelected = { role = it })
+                            Role.PILLION -> PillionScreen(onBack = { role = null })
+                            Role.RIDER -> RiderScreen(onBack = { role = null })
+                        }
                     }
                 }
             }
@@ -120,7 +131,7 @@ private fun RideLinkApp() {
 }
 
 @Composable
-private fun AppHeader(isDarkTheme: Boolean, onToggleTheme: () -> Unit) {
+private fun AppHeader(isDarkTheme: Boolean, onToggleTheme: () -> Unit, onOpenSettings: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -130,6 +141,7 @@ private fun AppHeader(isDarkTheme: Boolean, onToggleTheme: () -> Unit) {
     ) {
         Text(text = "RideLink", style = MaterialTheme.typography.titleMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onOpenSettings) { Text("Settings") }
             Text(
                 text = if (isDarkTheme) "Dark" else "Light",
                 style = MaterialTheme.typography.bodySmall,

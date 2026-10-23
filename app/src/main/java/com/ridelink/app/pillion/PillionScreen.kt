@@ -9,11 +9,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ridelink.app.nearby.NearbyState
 import com.ridelink.app.nearby.formatPeerName
@@ -22,9 +22,9 @@ import com.ridelink.app.voicechat.VoiceChatControls
 @Composable
 fun PillionScreen(onBack: () -> Unit) {
     val viewModel: PillionViewModel = viewModel()
-    val connectionState by viewModel.connectionState.collectAsState()
-    val capturedLink by viewModel.capturedLink.collectAsState()
-    val lastSentLink by viewModel.lastSentLink.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val capturedLink by viewModel.capturedLink.collectAsStateWithLifecycle()
+    val lastSentLink by viewModel.lastSentLink.collectAsStateWithLifecycle()
 
     DisposableEffect(Unit) {
         viewModel.start()
