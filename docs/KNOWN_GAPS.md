@@ -79,8 +79,11 @@ README is what turns these into facts.
   made from. GitHub Actions (`assembleDebug`/`assembleRelease`) is the
   only real compiler check, which is why diffs need careful manual review
   before every push.
-- **`isMinifyEnabled = false`** -- no R8/ProGuard shrinking/obfuscation on
-  release builds yet.
+- **R8 minification is on for release builds** (`isMinifyEnabled` +
+  `isShrinkResources`, rules in `app/proguard-rules.pro`), but it has only
+  ever been checked by CI compiling -- a problem that only appears in the
+  minified build would only show up on a device. It was added as its own
+  commit so it can be reverted independently.
 - **Per-ride-only pairing** -- no "remembered devices" mode; both sides
   re-discover fresh every session by design (v1 scope), not currently
   planned to change.
