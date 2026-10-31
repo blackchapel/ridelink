@@ -156,8 +156,10 @@ verification -- see `docs/KNOWN_GAPS.md`.
   1. `build` -- signed `assembleRelease` from any branch using the release
      keystore, `<major.minor>-<branch>.<short-sha>` versionName (no patch
      number -- it's not a tagged release). Uploads the APK as a
-     short-lived workflow artifact; version info and the artifact's URL
-     are exposed as job outputs.
+     short-lived workflow artifact; version info and the artifact's numeric
+     id are exposed as job outputs (not its URL: GitHub drops job outputs
+     containing a secret-looking string, and the repo name `ridelink` is
+     masked in logs, so `notify` rebuilds the URL from `github.repository`).
   2. `notify` (`needs: build`, `if: always()` -- runs even if `build`
      failed) -- posts a Discord embed using `build`'s outputs.
 - `.github/workflows/release.yml` ("Production Release") -- **manual

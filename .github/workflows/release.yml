@@ -93,8 +93,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # push the release tag and create the GitHub Release
-    outputs:
-      release_url: ${{ steps.release.outputs.url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -129,7 +127,9 @@ jobs:
           VERSION_NAME: ${{ needs.build.outputs.version_name }}
           VERSION_CODE: ${{ needs.build.outputs.version_code }}
           TAG_NAME: ${{ needs.build.outputs.tag_name }}
-          RELEASE_URL: ${{ needs.release.outputs.release_url }}
+          # Built here, not passed as a job output: GitHub drops outputs that
+          # contain a secret-looking string, and the repo name matches one.
+          RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.build.outputs.tag_name }}
         run: |
           if [ "$BUILD_RESULT" = "success" ] && [ "$RELEASE_RESULT" = "success" ]; then
             TITLE="🚀 RideLink production release published"
@@ -140,6 +140,10 @@ jobs:
           else
             TITLE="❌ RideLink production release failed (release creation)"
             COLOR=15158332
+          fi
+          # No release was published unless both jobs succeeded: don't link one.
+          if [ "$BUILD_RESULT" != "success" ] || [ "$RELEASE_RESULT" != "success" ]; then
+            RELEASE_URL=""
           fi
           PAYLOAD=$(jq -n \
             --arg title "$TITLE" \
