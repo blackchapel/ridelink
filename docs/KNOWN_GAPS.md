@@ -32,6 +32,93 @@ part of the change that touches them -- see `CLAUDE.md`.
   quality) -- an intentional, conservative starting point given the
   Bluetooth-at-range throughput unknown, not yet revisited.
 
+## Connected-status notification / dynamic foreground-service type
+
+- **Dynamic foreground-service-type change is unverified on a real
+  device.** `RiderForegroundService`/`PillionForegroundService` now add
+  the `microphone` type to themselves mid-life (re-invoking
+  `startForeground()`) for the duration of a call, instead of running a
+  separate `VoiceCallForegroundService` the way this app used to -- a
+  deliberate reversal of an earlier decision that avoided this
+  specifically for lack of real-device verification. If it doesn't
+  behave correctly (the connection destabilizes when a call starts/ends,
+  or the OS rejects/ignores the type change on some version/OEM), the
+  documented fallback is to reintroduce a second, call-scoped foreground
+  service rather than assume the single-service design forward.
+- **Crash fixes in this round come from reading the code, not from a
+  stack trace.** Fixed: voice calls started without the microphone
+  permission or with the mic busy, microphone service type requested from
+  the background (now taken at offer/accept time), Disconnect/End via a
+  start-service intent to a service that may not be running, teardown
+  order, simultaneous Call, endless ringing, a stale screen after
+  Disconnect from the notification, and Maps launch failures. If a crash
+  remains, the role picker's "Share report" gives the stack trace.
+- **If Android refuses the microphone service type** (permission revoked,
+  privacy switch, restricted OEM background rules) the call does not start
+  and a Toast says so; there is no retry or in-notification explanation.
+- **No automatic reconnect** after the connection drops (still "reopen to
+  try again"); the unmerged battery branch adds that.
+- **Quiet channel vs. the Samsung Now Bar is unverified.** The connected
+  notification now lives on a LOW-importance channel except for alerts.
+  Live Update promotion only excludes IMPORTANCE_MIN, but if the Now Bar
+  behaves differently the fallback is a silent default-importance channel.
+- **Samsung promoted path (`SAMSUNG_PROMOTED_PATH`) is experimental.**
+  Built from community write-ups of One UI 8.5/9 internals (no `style`
+  extra, `chipBgColor`); not Samsung documentation. It may fix the slow /
+  background-less status-bar pill, or change the Now Bar card. Set the
+  constant to `false` to restore the earlier extras. Do not use the
+  `automation` extra: One UI shows it as "Gemini Intelligence" (Gemini icon,
+  name and rainbow border). Without Samsung approving the package, RideLink
+  appears only when Developer options > "Live notifications for all apps"
+  is on.
+- **Channel-switch + `setOnlyAlertOnce` alerting behavior is not
+  documented with certainty** across Android versions/OEMs -- needs
+  real-device confirmation that "just connected" and "incoming offer"
+  actually produce a heads-up alert rather than a silent update.
+- **An unexpected mid-ride disconnect stays quiet** (reverts to the
+  low-priority pre-connection text) rather than alerting -- a deliberate
+  default matching prior behavior, not something the user has confirmed
+  either way.
+- **Whether the notification reaches Samsung's Now Bar / status pill is
+  unverified.** Android's Live Update rules are met (ongoing, title, no
+  custom view, not MIN importance, permission declared, promotion
+  requested), but Samsung can add its own conditions: reports say One UI 8/8.5
+  limited it to Samsung apps unless Developer options > "Live
+  notifications for all apps" is on, and One UI 9's widening is tied to
+  Android 17's Metric Style (health, timers, travel) -- nothing found says
+  arbitrary apps are let in. The role screens show whether Android allows
+  promotion. If Samsung needs allow-listing by package name, that is a
+  request only the app owner can make to Samsung Developer Support.
+- **Whether Samsung shows third-party action buttons on the Now Bar card
+  is unconfirmed.** If not, the pill/card show status only and the buttons
+  stay in the notification shade.
+- **The Samsung-specific extras are an experiment.** The
+  `android.ongoingActivityNoti.*` keys and the `ongoing_activity`
+  meta-data come from unofficial blogs (one says it "cannot be used for
+  actual implementation"). They are harmless where ignored but unproven.
+- **The Live Update API names now compile, but behaviour on a phone is
+  untested.** `NotificationCompat.Builder.setRequestPromotedOngoing` /
+  `setShortCriticalText` (androidx.core 1.17, compileSdk 36) and
+  `NotificationManager.canPostPromotedNotifications()` built in CI (Test
+  Release #19). `Settings.ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS` does not
+  exist in compileSdk 36, so the role-screen shortcut opens the app's general
+  notification settings instead. androidx.core 1.17 requires AGP 8.9.1 or
+  higher, so the build uses AGP 8.9.1 / Gradle 8.11.1.
+- **The pill can't show "Muted" and the timer together.** The status pill
+  takes either custom text or the chronometer, so muted shows "Muted" and
+  the card's own timer keeps running.
+- **Status-pill words are limited to under 7 characters** ("Linked",
+  "Call", "Voice", "Muted"); longer text may fall back to icon-only.
+- **Output cycling shows the current output, which is read from the
+  system at call start** (no output is forced). Other apps changing the
+  route mid-call aren't tracked until the next tap.
+- **No full-screen-intent / CallStyle for the incoming-offer moment** --
+  deliberately not used so the notification stays eligible for promotion
+  and looks the same on every phone; the plain-button alert may feel
+  weaker than a real incoming-call UI.
+- **"No alert while the app is open" is based on process foreground
+  state.** Opening the share-target screen briefly counts as foreground.
+
 ## Build / process
 
 - **No automated tests** (unit or instrumented) anywhere in the project.
@@ -66,6 +153,26 @@ part of the change that touches them -- see `CLAUDE.md`.
   conventional-commit linting or similar check that would catch a
   PR that should have bumped the version but didn't (or bumped it when it
   shouldn't have). PATCH itself is fully automatic and not at risk here.
+- **The changelog step in Production Release has not run for real yet.**
+  `.github/scripts/release-notes.sh` is copied from Recipai, where it was
+  tested locally on sample files; here the workflow only exercises it when
+  a release is cut. If the first release fails there, look at that step
+  before blaming the build.
+- **The Production Release Discord message has only been checked by
+  simulation.** The notify step was run locally for success / missing
+  notes / build failure / release failure, but the real run is the first
+  time `needs.build.outputs.notes_missing` is read from a failed job. If
+  the "no release notes" message does not appear, the generic "failed
+  (build)" one will, and the Actions log still names the step.
+- **Releasing needs one extra PR** (renaming `Unreleased` to the version in
+  `CHANGELOG.md`), and the version must be predicted correctly (next patch
+  after the highest `v<MAJOR.MINOR>.*` tag). The workflow's error message
+  prints the heading to use if it was guessed wrong.
+- **Changelog lines depend on discipline.** Nothing checks that a PR added
+  one; `CLAUDE.md` says it must.
+- **The only existing tag is `1.0.0` (no `v` prefix).** The workflow counts
+  only `v<MAJOR.MINOR>.*` tags, so it ignores that one; the first release
+  under the new scheme is `v<MAJOR.MINOR>.0`.
 - **Release note quality depends on PR labeling discipline.** An
   unlabeled PR just lands in "Other Changes" in the categorized release
   notes (see `docs/SYSTEM_STATE.md`) rather than failing anything --
