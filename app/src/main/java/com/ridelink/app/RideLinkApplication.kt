@@ -7,6 +7,7 @@ import android.app.NotificationManager
 class RideLinkApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        AppVisibility.init()
         val manager = getSystemService(NotificationManager::class.java)
 
         // Quiet, ongoing "not yet connected" status per role -- required by
@@ -56,7 +57,7 @@ class RideLinkApplication : Application() {
                 "Connected -- voice chat controls",
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
-                description = "Shows once paired, with voice chat controls (offer, accept, mute, end, disconnect)."
+                description = "Shows once paired, with disconnect and voice chat controls (accept, reject, mute, output, end)."
             },
         )
 

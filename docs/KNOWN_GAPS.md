@@ -53,10 +53,45 @@ part of the change that touches them -- see `CLAUDE.md`.
   low-priority pre-connection text) rather than alerting -- a deliberate
   default matching prior behavior, not something the user has confirmed
   either way.
-- **No `NotificationCompat.CallStyle`/full-screen-intent** for the
-  incoming-offer moment -- deliberately deferred (see
-  `docs/SYSTEM_STATE.md`); the plain three-button notification alert may
-  feel weaker than a real incoming-call UI in practice.
+- **Whether the notification reaches Samsung's Now Bar / status pill is
+  unverified.** Android's Live Update rules are met (ongoing, title, no
+  custom view, not MIN importance, permission declared, promotion
+  requested), but Samsung can add its own conditions: reports say One UI 8/8.5
+  limited it to Samsung apps unless Developer options > "Live
+  notifications for all apps" is on, and One UI 9's widening is tied to
+  Android 17's Metric Style (health, timers, travel) -- nothing found says
+  arbitrary apps are let in. The role screens show whether Android allows
+  promotion. If Samsung needs allow-listing by package name, that is a
+  request only the app owner can make to Samsung Developer Support.
+- **Whether Samsung shows third-party action buttons on the Now Bar card
+  is unconfirmed.** If not, the pill/card show status only and the buttons
+  stay in the notification shade.
+- **The Samsung-specific extras are an experiment.** The
+  `android.ongoingActivityNoti.*` keys and the `ongoing_activity`
+  meta-data come from unofficial blogs (one says it "cannot be used for
+  actual implementation"). They are harmless where ignored but unproven.
+- **API names for the Live Update helpers were not verified by a
+  compile.** `NotificationCompat.Builder.setRequestPromotedOngoing` and
+  `setShortCriticalText` (androidx.core 1.17, compileSdk 36) and
+  `canPostPromotedNotifications()` / `ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS`
+  come from the official docs and search results; a first CI build may need
+  a name fix. `compileSdk` 36 is used with AGP 8.7.2 (which predates it)
+  and the unsupported-compileSdk warning is suppressed in
+  `gradle.properties`.
+- **The pill can't show "Muted" and the timer together.** The status pill
+  takes either custom text or the chronometer, so muted shows "Muted" and
+  the card's own timer keeps running.
+- **Status-pill words are limited to under 7 characters** ("Linked",
+  "Call", "Voice", "Muted"); longer text may fall back to icon-only.
+- **Output cycling shows the current output, which is read from the
+  system at call start** (no output is forced). Other apps changing the
+  route mid-call aren't tracked until the next tap.
+- **No full-screen-intent / CallStyle for the incoming-offer moment** --
+  deliberately not used so the notification stays eligible for promotion
+  and looks the same on every phone; the plain-button alert may feel
+  weaker than a real incoming-call UI.
+- **"No alert while the app is open" is based on process foreground
+  state.** Opening the share-target screen briefly counts as foreground.
 
 ## Build / process
 

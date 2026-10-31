@@ -26,11 +26,11 @@ class NotificationActionReceiver : BroadcastReceiver() {
         }
 
         when (intent.action) {
-            ACTION_OFFER -> voiceChat?.offer()
             ACTION_CANCEL_OFFER -> voiceChat?.cancelOffer()
             ACTION_ACCEPT -> voiceChat?.accept()
             ACTION_DECLINE -> voiceChat?.decline()
             ACTION_TOGGLE_MUTE -> voiceChat?.let { it.setMuted(!it.isMuted.value) }
+            ACTION_CYCLE_OUTPUT -> voiceChat?.routing?.cycleToNext()
             ACTION_END_CALL -> voiceChat?.end()
             ACTION_DISCONNECT -> {
                 // Not a bare reset() -- that would leave the service running,
@@ -49,11 +49,11 @@ class NotificationActionReceiver : BroadcastReceiver() {
 
     companion object {
         const val EXTRA_ROLE = "com.ridelink.app.notifications.EXTRA_ROLE"
-        const val ACTION_OFFER = "com.ridelink.app.notifications.ACTION_OFFER"
         const val ACTION_CANCEL_OFFER = "com.ridelink.app.notifications.ACTION_CANCEL_OFFER"
         const val ACTION_ACCEPT = "com.ridelink.app.notifications.ACTION_ACCEPT"
         const val ACTION_DECLINE = "com.ridelink.app.notifications.ACTION_DECLINE"
         const val ACTION_TOGGLE_MUTE = "com.ridelink.app.notifications.ACTION_TOGGLE_MUTE"
+        const val ACTION_CYCLE_OUTPUT = "com.ridelink.app.notifications.ACTION_CYCLE_OUTPUT"
         const val ACTION_END_CALL = "com.ridelink.app.notifications.ACTION_END_CALL"
         const val ACTION_DISCONNECT = "com.ridelink.app.notifications.ACTION_DISCONNECT"
     }

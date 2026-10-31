@@ -54,17 +54,32 @@ Two roles, one pairing, no server anywhere:
 - `notifications/` -- the single persistent notification shown per role,
   both pre- and post-connection:
   - `ConnectionNotificationBuilder.kt` -- stateless; builds the
-    notification for the current `NearbyState` + `VoiceChatState` + mute,
-    per role. Quiet/LOW while not yet connected; HIGH with action buttons
-    once connected (`[Voice Chat] [Disconnect]` idle, `[Waiting to
-    accept...] [Disconnect]` offering -- tapping it cancels the offer,
-    `[Accept] [Decline] [Disconnect]` incoming, `[Mute/Unmute] [End]
-    [Disconnect]` active). Callers decide per-update whether it should
-    alert (`setOnlyAlertOnce`) by comparing against the previous state --
-    only "just connected" and "incoming offer" do.
+    notification for the current `NearbyState` + `VoiceChatState`, per
+    role. Quiet/LOW while not yet connected; HIGH once connected, with
+    plain `addAction()` buttons (no CallStyle, no custom layout, so it is
+    eligible for promotion and looks the same everywhere): `[Disconnect]`
+    connected, `[Cancel]` while we are calling, `[Reject] [Accept]`
+    incoming, `[Mute/Unmute] [<current output>] [End]` in a call (a
+    chronometer shows the call time without re-posting every second).
+    It also requests Android 16+ Live Update promotion
+    (`setRequestPromotedOngoing`, short pill text `setShortCriticalText`:
+    "Linked" / "Call" / "Voice" / "Muted", kept under 7 characters; during
+    an unmuted call the pill shows the chronometer instead) and adds a
+    clearly marked **experimental** block of Samsung-specific extras
+    (`android.ongoingActivityNoti.*`, from unofficial blogs; Samsung may
+    ignore them) plus the `ongoing_activity` manifest meta-data.
+  - `ConnectionNotificationUpdater.kt` -- `launchConnectionNotificationUpdates`
+    (shared by both role services) re-posts the notification when the
+    connection, call state, mute, audio output or app visibility changes,
+    and `AlertPolicy` decides which updates may alert (only "just paired" and
+    "incoming request", never while the app is in the foreground; a request
+    still ringing when the app is left alerts then).
+  - `NowBarStatusLine.kt` -- small Compose line on both role screens
+    showing `NotificationManager.canPostPromotedNotifications()` and a
+    shortcut to `Settings.ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS`.
   - `NotificationActionReceiver.kt` -- manifest-registered
-    `BroadcastReceiver` handling every button tap (offer/cancel/accept/
-    decline/mute-toggle/end/disconnect), dispatched to the tapped role's
+    `BroadcastReceiver` handling every button tap (cancel/accept/
+    decline/mute-toggle/cycle-output/end/disconnect), dispatched to the tapped role's
     `RiderSession`/`PillionSession`. Disconnect routes through the
     owning service's stop-intent (not a bare `reset()`), since only that
     also cancels the notification and stops the service.
@@ -73,6 +88,9 @@ Two roles, one pairing, no server anywhere:
     is running, so `VoiceChatSession` can trigger the microphone
     foreground-service-type change (see Voice chat below) without
     depending on either service class directly.
+- `AppVisibility.kt` -- whether RideLink is in the foreground (via
+  `ProcessLifecycleOwner`, which ignores rotation), used to keep alerting
+  notifications quiet while the app is open.
 - `permissions/PermissionsGate.kt` -- runtime permission + Bluetooth/
   Wi-Fi-enabled gating shared by both roles before any Nearby call is
   made.
@@ -189,5 +207,6 @@ verification -- see `docs/KNOWN_GAPS.md`.
 ## Pinned versions (as of this snapshot)
 
 AGP `8.7.2`, Kotlin `2.0.21`, Compose BOM `2024.10.01`,
-`play-services-nearby` `19.3.0`, `compileSdk`/`targetSdk` `35`,
+`play-services-nearby` `19.3.0`, `androidx.core` `1.17.0`,
+`lifecycle-process` `2.8.6`, `compileSdk` `36` / `targetSdk` `35`,
 `minSdk` `26`, JDK `17`.

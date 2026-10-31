@@ -10,12 +10,12 @@ import com.ridelink.app.nearby.NearbyState
 import com.ridelink.app.notifications.ConnectionNotificationBuilder
 import com.ridelink.app.notifications.ConnectionNotificationHost
 import com.ridelink.app.notifications.ConnectionRole
+import com.ridelink.app.notifications.launchConnectionNotificationUpdates
 import com.ridelink.app.voicechat.VoiceChatState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
@@ -49,7 +49,7 @@ class PillionForegroundService : Service(), ConnectionNotificationHost {
             this,
             STATUS_NOTIFICATION_ID,
             ConnectionNotificationBuilder.build(
-                this, ConnectionRole.PILLION, NearbyState.Idle, VoiceChatState.IDLE, isMuted = false, alert = false,
+                this, ConnectionRole.PILLION, NearbyState.Idle, VoiceChatState.IDLE, null, alert = false,
             ),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
         )
@@ -58,30 +58,10 @@ class PillionForegroundService : Service(), ConnectionNotificationHost {
 
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         serviceScope = scope
-        val voiceChat = PillionSession.voiceChat
-        if (voiceChat != null) {
-            scope.launch {
-                var wasConnected = false
-                var wasIncomingOffer = false
-                combine(
-                    PillionSession.connectionState,
-                    voiceChat.callState,
-                    voiceChat.isMuted,
-                ) { nearbyState, callState, muted -> Triple(nearbyState, callState, muted) }
-                    .collect { (nearbyState, callState, muted) ->
-                        val nowConnected = nearbyState is NearbyState.Connected
-                        val nowIncomingOffer = callState == VoiceChatState.INCOMING_OFFER
-                        val alert = (nowConnected && !wasConnected) || (nowIncomingOffer && !wasIncomingOffer)
-                        NotificationManagerCompat.from(this@PillionForegroundService).notify(
-                            STATUS_NOTIFICATION_ID,
-                            ConnectionNotificationBuilder.build(
-                                this@PillionForegroundService, ConnectionRole.PILLION, nearbyState, callState, muted, alert,
-                            ),
-                        )
-                        wasConnected = nowConnected
-                        wasIncomingOffer = nowIncomingOffer
-                    }
-            }
+        PillionSession.voiceChat?.let { voiceChat ->
+            scope.launchConnectionNotificationUpdates(
+                this, ConnectionRole.PILLION, STATUS_NOTIFICATION_ID, PillionSession.connectionState, voiceChat,
+            )
         }
     }
 
@@ -113,7 +93,7 @@ class PillionForegroundService : Service(), ConnectionNotificationHost {
                 ConnectionRole.PILLION,
                 PillionSession.connectionState.value,
                 VoiceChatState.ACTIVE,
-                PillionSession.voiceChat?.isMuted?.value ?: false,
+                PillionSession.voiceChat,
                 alert = false,
             ),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
@@ -126,7 +106,7 @@ class PillionForegroundService : Service(), ConnectionNotificationHost {
             STATUS_NOTIFICATION_ID,
             ConnectionNotificationBuilder.build(
                 this, ConnectionRole.PILLION, PillionSession.connectionState.value,
-                VoiceChatState.IDLE, isMuted = false, alert = false,
+                VoiceChatState.IDLE, PillionSession.voiceChat, alert = false,
             ),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
         )

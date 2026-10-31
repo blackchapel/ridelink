@@ -43,6 +43,11 @@ class VoiceChatSession(private val context: Context, private val nearbyManager: 
     private val _isMuted = MutableStateFlow(false)
     val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
 
+    // Wall-clock start of the active call, for the notification's running
+    // timer (a chronometer, so the notification isn't re-posted every second).
+    private val _callStartedAt = MutableStateFlow<Long?>(null)
+    val callStartedAt: StateFlow<Long?> = _callStartedAt.asStateFlow()
+
     private var focusRequest: AudioFocusRequest? = null
 
     // Next sequence number the receiver will accept -- not a reorder/wait
@@ -145,8 +150,11 @@ class VoiceChatSession(private val context: Context, private val nearbyManager: 
     }
 
     private fun beginCall() {
-        ConnectionNotificationHost.current?.enterCallType()
+        // Set before enterCallType(), which builds the in-call notification.
+        _callStartedAt.value = System.currentTimeMillis()
         requestAudioFocusAndMode()
+        routing.syncSelected()
+        ConnectionNotificationHost.current?.enterCallType()
         expectedSeq = 0
         audioPlayback.start()
         audioCapture.setMuted(_isMuted.value)
@@ -158,6 +166,7 @@ class VoiceChatSession(private val context: Context, private val nearbyManager: 
         audioCapture.stop()
         audioPlayback.stop()
         abandonAudioFocusAndMode()
+        _callStartedAt.value = null
         ConnectionNotificationHost.current?.exitCallType()
         _isMuted.value = false
         _callState.value = VoiceChatState.IDLE

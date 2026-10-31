@@ -9,6 +9,7 @@ import android.content.pm.ServiceInfo
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
+import com.ridelink.app.AppVisibility
 import com.ridelink.app.EXTRA_ROUTE_LINK
 import com.ridelink.app.MainActivity
 import com.ridelink.app.R
@@ -18,12 +19,12 @@ import com.ridelink.app.nearby.formatPeerName
 import com.ridelink.app.notifications.ConnectionNotificationBuilder
 import com.ridelink.app.notifications.ConnectionNotificationHost
 import com.ridelink.app.notifications.ConnectionRole
+import com.ridelink.app.notifications.launchConnectionNotificationUpdates
 import com.ridelink.app.voicechat.VoiceChatState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 
@@ -74,7 +75,7 @@ class RiderForegroundService : Service(), ConnectionNotificationHost {
             this,
             STATUS_NOTIFICATION_ID,
             ConnectionNotificationBuilder.build(
-                this, ConnectionRole.RIDER, NearbyState.Idle, VoiceChatState.IDLE, isMuted = false, alert = false,
+                this, ConnectionRole.RIDER, NearbyState.Idle, VoiceChatState.IDLE, null, alert = false,
             ),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
         )
@@ -83,39 +84,19 @@ class RiderForegroundService : Service(), ConnectionNotificationHost {
 
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         serviceScope = scope
-        val voiceChat = RiderSession.voiceChat
-        if (voiceChat != null) {
-            scope.launch {
-                // Only re-alert on the two moments actually worth interrupting
-                // for: just paired, and an incoming call -- every other update
-                // (offering, active, mute toggling) posts quietly.
-                var wasConnected = false
-                var wasIncomingOffer = false
-                combine(
-                    RiderSession.connectionState,
-                    voiceChat.callState,
-                    voiceChat.isMuted,
-                ) { nearbyState, callState, muted -> Triple(nearbyState, callState, muted) }
-                    .collect { (nearbyState, callState, muted) ->
-                        val nowConnected = nearbyState is NearbyState.Connected
-                        val nowIncomingOffer = callState == VoiceChatState.INCOMING_OFFER
-                        val alert = (nowConnected && !wasConnected) || (nowIncomingOffer && !wasIncomingOffer)
-                        NotificationManagerCompat.from(this@RiderForegroundService).notify(
-                            STATUS_NOTIFICATION_ID,
-                            ConnectionNotificationBuilder.build(
-                                this@RiderForegroundService, ConnectionRole.RIDER, nearbyState, callState, muted, alert,
-                            ),
-                        )
-                        wasConnected = nowConnected
-                        wasIncomingOffer = nowIncomingOffer
-                    }
-            }
+        RiderSession.voiceChat?.let { voiceChat ->
+            scope.launchConnectionNotificationUpdates(
+                this, ConnectionRole.RIDER, STATUS_NOTIFICATION_ID, RiderSession.connectionState, voiceChat,
+            )
         }
         scope.launch {
             // Only fires on a genuinely new link (StateFlow conflates equal
             // consecutive values) -- never re-alerts for unrelated
             // connection-state changes.
             RiderSession.latestRouteLink.filterNotNull().collect { link ->
+                // The app is open: Maps was already launched directly, and a
+                // "tap to open" notification would just be noise.
+                if (AppVisibility.isForeground.value) return@collect
                 val peerName = (RiderSession.connectionState.value as? NearbyState.Connected)
                     ?.let { formatPeerName(it.endpointName) }
                 NotificationManagerCompat.from(this@RiderForegroundService)
@@ -158,7 +139,7 @@ class RiderForegroundService : Service(), ConnectionNotificationHost {
                 ConnectionRole.RIDER,
                 RiderSession.connectionState.value,
                 VoiceChatState.ACTIVE,
-                RiderSession.voiceChat?.isMuted?.value ?: false,
+                RiderSession.voiceChat,
                 alert = false,
             ),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
@@ -171,7 +152,7 @@ class RiderForegroundService : Service(), ConnectionNotificationHost {
             STATUS_NOTIFICATION_ID,
             ConnectionNotificationBuilder.build(
                 this, ConnectionRole.RIDER, RiderSession.connectionState.value,
-                VoiceChatState.IDLE, isMuted = false, alert = false,
+                VoiceChatState.IDLE, RiderSession.voiceChat, alert = false,
             ),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
         )
