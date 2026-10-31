@@ -100,8 +100,9 @@ part of the change that touches them -- see `CLAUDE.md`.
   limited it to Samsung apps unless Developer options > "Live
   notifications for all apps" is on, and One UI 9's widening is tied to
   Android 17's Metric Style (health, timers, travel) -- nothing found says
-  arbitrary apps are let in. The role screens show whether Android allows
-  promotion. If Samsung needs allow-listing by package name, that is a
+  arbitrary apps are let in. The app no longer shows whether Android allows
+  promotion (the role-screen status line was removed); check the phone's
+  notification settings. If Samsung needs allow-listing by package name, that is a
   request only the app owner can make to Samsung Developer Support.
 - **Whether Samsung shows third-party action buttons on the Now Bar card
   is unconfirmed.** If not, the pill/card show status only and the buttons
@@ -151,6 +152,20 @@ part of the change that touches them -- see `CLAUDE.md`.
   planned to change.
 
 ## Release pipeline
+
+- **Version code is a branch's commit count, so a build can fail to update
+  over a newer one.** Test Release (and Production Release) set `versionCode`
+  to `git rev-list --count HEAD` of the branch being built. Android refuses
+  to install a lower `versionCode` over a higher one and only says "App not
+  installed". Seen: the notification test build (`18325bc`) was code 26 and
+  the later optimisation test build (`c5dbd73`, a branch cut after `main`
+  squash-merged) was code 21, so it would not update over it. Squash merges
+  make a branch's count drop below an older unsquashed branch's, and a
+  Production Release (counted on `main`) can likewise be lower than a test
+  build already installed. Workaround: uninstall RideLink, then install.
+  **Not fixed yet.** The planned fix is a version code that only goes up
+  (minutes since 1970 in both workflows, about 29.9 million today, so it is
+  above every existing build), a one-way change to the production scheme.
 
 - **Release secrets are managed manually.** No tool available in this
   environment can set GitHub repo secrets (`KEYSTORE_BASE64`,

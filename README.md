@@ -119,8 +119,8 @@ physical Android devices:
    show the high-priority connected notification with `[Call] [Disconnect]`. On a
    phone that supports Live Updates (Samsung One UI 8/9: switch on Developer
    options > "Live notifications for all apps" if it is off), the status-bar
-   pill ("Linked") and Now Bar card may appear too. The "Live Updates"
-   line on the role screen says whether Android allows it.
+   pill ("Linked") and Now Bar card may appear too (the app itself shows no
+   status line for this; look at the phone's notification settings).
 3. On Device A, open Google Maps, build a route, Share -> RideLink.
    Device A shows "Route sent". Device B should automatically launch
    Google Maps navigation with no further taps -- try this again with

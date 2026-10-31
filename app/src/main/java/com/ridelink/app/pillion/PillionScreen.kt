@@ -28,7 +28,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ridelink.app.nearby.NearbyState
 import com.ridelink.app.nearby.formatPeerName
-import com.ridelink.app.notifications.NowBarStatusLine
 import com.ridelink.app.voicechat.VoiceChatControls
 
 @Composable
@@ -82,8 +81,6 @@ fun PillionScreen(onBack: () -> Unit) {
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(top = 16.dp),
         )
-
-        NowBarStatusLine()
 
         Text(
             text = when {
