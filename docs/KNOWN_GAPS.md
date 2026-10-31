@@ -70,15 +70,14 @@ part of the change that touches them -- see `CLAUDE.md`.
   `android.ongoingActivityNoti.*` keys and the `ongoing_activity`
   meta-data come from unofficial blogs (one says it "cannot be used for
   actual implementation"). They are harmless where ignored but unproven.
-- **API names for the Live Update helpers were not verified by a
-  compile.** `NotificationCompat.Builder.setRequestPromotedOngoing` and
+- **The Live Update API names now compile, but behaviour on a phone is
+  untested.** `NotificationCompat.Builder.setRequestPromotedOngoing` /
   `setShortCriticalText` (androidx.core 1.17, compileSdk 36) and
-  `canPostPromotedNotifications()` compiled in CI (compileSdk 36);
-  `Settings.ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS` did not exist there, so
-  the role-screen shortcut opens the app's general notification settings
-  instead. androidx.core 1.17 itself requires AGP 8.9.1 or higher, so
-  the build uses AGP 8.9.1 / Gradle 8.11.1 (the first attempt on AGP 8.7.2
-  failed the AAR-metadata check before compiling anything).
+  `NotificationManager.canPostPromotedNotifications()` built in CI (Test
+  Release #19). `Settings.ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS` does not
+  exist in compileSdk 36, so the role-screen shortcut opens the app's general
+  notification settings instead. androidx.core 1.17 requires AGP 8.9.1 or
+  higher, so the build uses AGP 8.9.1 / Gradle 8.11.1.
 - **The pill can't show "Muted" and the timer together.** The status pill
   takes either custom text or the chronometer, so muted shows "Muted" and
   the card's own timer keeps running.
