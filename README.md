@@ -67,10 +67,14 @@ AGP 8.9.1). Two ways to build:
   - **Production Release** (`release.yml`) -- **manual only** (not
     triggered by merging to `main`). Dispatch it against `main` when
     you've decided it's time to cut a release: it tags the release,
-    creates a GitHub Release with the signed APK attached and
-    auto-generated, categorized release notes (every PR merged since the
-    last release, grouped by label), and posts the Release link to
-    Discord.
+    creates a GitHub Release with the signed APK attached, and posts
+    the Release link to Discord. The release notes are the hand-written
+    `CHANGELOG.md` section for that version, followed by GitHub's
+    generated list of PRs merged since the last release (grouped by
+    label). **Before dispatching**, open a small PR that renames
+    `## Unreleased` in `CHANGELOG.md` to `## <version> (<date>)` and starts
+    a new empty `## Unreleased` above it; the workflow stops before
+    building if that section is missing (the error prints the heading).
   - Both need these repository secrets configured: `KEYSTORE_BASE64`,
     `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`, and
     `DISCORD_WEBHOOK_URL`. No key material lives in this repo.

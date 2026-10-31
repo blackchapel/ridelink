@@ -153,6 +153,20 @@ part of the change that touches them -- see `CLAUDE.md`.
   conventional-commit linting or similar check that would catch a
   PR that should have bumped the version but didn't (or bumped it when it
   shouldn't have). PATCH itself is fully automatic and not at risk here.
+- **The changelog step in Production Release has not run for real yet.**
+  `.github/scripts/release-notes.sh` is copied from Recipai, where it was
+  tested locally on sample files; here the workflow only exercises it when
+  a release is cut. If the first release fails there, look at that step
+  before blaming the build.
+- **Releasing needs one extra PR** (renaming `Unreleased` to the version in
+  `CHANGELOG.md`), and the version must be predicted correctly (next patch
+  after the highest `v<MAJOR.MINOR>.*` tag). The workflow's error message
+  prints the heading to use if it was guessed wrong.
+- **Changelog lines depend on discipline.** Nothing checks that a PR added
+  one; `CLAUDE.md` says it must.
+- **The only existing tag is `1.0.0` (no `v` prefix).** The workflow counts
+  only `v<MAJOR.MINOR>.*` tags, so it ignores that one; the first release
+  under the new scheme is `v<MAJOR.MINOR>.0`.
 - **Release note quality depends on PR labeling discipline.** An
   unlabeled PR just lands in "Other Changes" in the categorized release
   notes (see `docs/SYSTEM_STATE.md`) rather than failing anything --

@@ -194,11 +194,16 @@ verification -- see `docs/KNOWN_GAPS.md`.
      the next job via a short-lived (`retention-days: 1`) workflow
      artifact -- jobs don't share a filesystem, so this is the only way
      to pass the built file across the job boundary. Refuses to run if
-     the computed tag already exists (safety check).
+     the computed tag already exists (safety check). Right after the
+     version is computed, `.github/scripts/release-notes.sh` extracts the
+     `## <version>` section from `CHANGELOG.md`; a missing or empty section
+     fails the run before the build.
   2. `release` (`needs: build`) -- downloads that APK, tags the built
      commit `v<version>`, and creates a GitHub Release at that tag via
-     `softprops/action-gh-release` with `generate_release_notes: true`
-     (GitHub auto-compiles the changelog from every PR merged since the
+     `softprops/action-gh-release`. The body is the hand-written
+     `CHANGELOG.md` section (`body_path`, written by
+     `.github/scripts/release-notes.sh`), and `generate_release_notes: true`
+     adds GitHub's "What's Changed" list below it (every PR merged since the
      previous release tag; `.github/release.yml` categorizes it by PR
      label -- "🚀 Features", "🐛 Fixes", "📝 Documentation", "🧰
      Maintenance", "Other Changes" for anything unlabeled) with the APK

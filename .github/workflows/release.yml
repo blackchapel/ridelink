@@ -66,6 +66,11 @@ jobs:
           echo "version_code=$COMMIT_COUNT" >> "$GITHUB_OUTPUT"
           echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
 
+      - name: Check the release notes exist
+        # Fail now, not after the build: CHANGELOG.md must have a section for
+        # this version (see .github/scripts/release-notes.sh).
+        run: .github/scripts/release-notes.sh "${{ steps.version.outputs.version_name }}" "${{ runner.temp }}/release-notes.md"
+
       - name: Decode signing keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "${{ runner.temp }}/release.jks"
 
@@ -105,12 +110,18 @@ jobs:
           name: release-apk
           path: app/build/outputs/apk/release/
 
+      - name: Write the release notes
+        # The hand-written CHANGELOG.md section for this version is the body;
+        # GitHub's generated "What's Changed" PR list is added below it.
+        run: .github/scripts/release-notes.sh "${{ needs.build.outputs.version_name }}" "${{ runner.temp }}/release-notes.md"
+
       - name: Create GitHub Release
         id: release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.build.outputs.tag_name }}
           name: ${{ needs.build.outputs.tag_name }}
+          body_path: ${{ runner.temp }}/release-notes.md
           generate_release_notes: true
           files: app/build/outputs/apk/release/app-release.apk
 
