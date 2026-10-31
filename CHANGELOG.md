@@ -11,6 +11,8 @@ and refuses to run if it is missing.
 
 ## Unreleased
 
+## 1.1.0 (2026-10-31)
+
 ### Added
 - **Connected notification with controls:** once the two phones are paired,
   the notification has the buttons that make sense right then -- Call and
