@@ -57,7 +57,12 @@ Two roles, one pairing, no server anywhere:
     notification for the current `NearbyState` + `VoiceChatState`, per
     role. Quiet/LOW while not yet connected; HIGH once connected, with
     plain `addAction()` buttons (no CallStyle, no custom layout, so it is
-    eligible for promotion and looks the same everywhere): `[Call]
+    eligible for promotion and looks the same everywhere; posted on the
+    silent `connection_quiet` channel (LOW), and on the HIGH
+    `connection_active` alert channel only for an update with `alert = true`,
+    because a first post on a HIGH channel can heads-up on some phones even
+    with `setOnlyAlertOnce`; the not-connected status notification has a
+    `[Stop]` button): `[Call]
     [Disconnect]` connected (Call and Accept are activity PendingIntents
     that open `MainActivity`, which asks for `RECORD_AUDIO` and then runs the
     action, while the microphone permission is missing), `[Cancel]` while we are calling, `[Reject] [Accept]`
@@ -69,7 +74,8 @@ Two roles, one pairing, no server anywhere:
     an unmuted call the pill shows the chronometer instead) and adds a
     clearly marked **experimental** block of Samsung-specific extras
     (`android.ongoingActivityNoti.*`, from unofficial blogs; Samsung may
-    ignore them) plus the `ongoing_activity` manifest meta-data.
+    ignore them): with `SAMSUNG_PROMOTED_PATH = true` just `automation = true`
+    plus `chipBgColor` (no `style`), otherwise the earlier private-card extras plus the `ongoing_activity` manifest meta-data.
   - `ConnectionNotificationUpdater.kt` -- `launchConnectionNotificationUpdates`
     (shared by both role services) re-posts the notification when the
     connection, call state, mute, audio output or app visibility changes,

@@ -58,6 +58,15 @@ part of the change that touches them -- see `CLAUDE.md`.
   and a Toast says so; there is no retry or in-notification explanation.
 - **No automatic reconnect** after the connection drops (still "reopen to
   try again"); the unmerged battery branch adds that.
+- **Quiet channel vs. the Samsung Now Bar is unverified.** The connected
+  notification now lives on a LOW-importance channel except for alerts.
+  Live Update promotion only excludes IMPORTANCE_MIN, but if the Now Bar
+  behaves differently the fallback is a silent default-importance channel.
+- **Samsung promoted path (`SAMSUNG_PROMOTED_PATH`) is experimental.**
+  Built from community write-ups of One UI 8.5/9 internals (the `automation`
+  extra, no `style` extra); not Samsung documentation. It may fix the slow
+  / background-less status-bar pill, or change the Now Bar card. Set the
+  constant to `false` to restore the earlier extras.
 - **Channel-switch + `setOnlyAlertOnce` alerting behavior is not
   documented with certainty** across Android versions/OEMs -- needs
   real-device confirmation that "just connected" and "incoming offer"

@@ -37,7 +37,11 @@ For the technical architecture and module-by-module breakdown, see
    on. The notification is also marked as an Android 16+ "Live
    Update", so phones that support it (Samsung's status-bar pill / Now Bar)
    can promote it; everywhere else it is the same plain notification (its
-   buttons show once expanded). While RideLink is open, it does not
+   buttons show once expanded). Before pairing, and after the other phone
+   disconnects, the notification has a **Stop** button to end the session.
+   The notification sits on a silent channel; only "just paired" and "voice
+   request" use a separate alerting channel, and only when RideLink is in
+   the background. While RideLink is open, it does not
    interrupt you with a "new route" notification or a sound for a connect or
    an incoming request -- the app screen already shows them. Audio flows
    over the same Nearby Connections link -- still no internet or mobile
@@ -129,7 +133,11 @@ physical Android devices:
    `[Call] [Disconnect]`). Also tap Call on both phones at the same moment --
    they should simply start talking, not both wait. Also confirm Reject on an incoming request reverts the
    caller's notification. Repeat with the other device as the caller.
-5. Disconnect, from the notification: tap it while just connected and the
+5. Quiet while open: on a phone that is not a Samsung, connect both phones
+   with RideLink open -- no heads-up should appear (connect with RideLink in
+   the background -- one should). Stop: from the waiting state, and after the
+   other phone disconnects, tap **Stop** on the notification.
+   Disconnect, from the notification: tap it while just connected and the
    Nearby connection should tear down and the notification disappear. Do it
    with RideLink open too: the screen should return to the role picker. If
    the app ever crashes, reopen it -- the role picker shows "Share report".

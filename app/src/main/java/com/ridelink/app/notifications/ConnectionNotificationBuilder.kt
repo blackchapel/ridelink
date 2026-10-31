@@ -27,6 +27,7 @@ import com.ridelink.app.voicechat.VoiceChatState
  * connected -- a high-priority notification whose buttons track
  * [VoiceChatState]:
  *
+ * - not connected: [Stop] (waiting, searching or disconnected)
  * - connected:     [Call] [Disconnect]
  * - we're calling: [Cancel]
  * - incoming:      [Reject] [Accept]
@@ -80,6 +81,9 @@ object ConnectionNotificationBuilder {
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(contentIntent(context))
+            // Without this there is no way to end a stuck "waiting" or
+            // "disconnected" state from the notification.
+            .addAction(disconnectAction(context, role, "Stop"))
             .build()
     }
 
@@ -145,13 +149,22 @@ object ConnectionNotificationBuilder {
             )
         }
 
-        val builder = NotificationCompat.Builder(context, RideLinkApplication.CONNECTION_ACTIVE_CHANNEL_ID)
+        // The HIGH channel only for a real alert. Posting on it at all can
+        // pop up a heads-up on some phones even with setOnlyAlertOnce(true)
+        // (e.g. when the app is open), so every other update stays on the
+        // quiet channel. Live Update promotion only excludes IMPORTANCE_MIN.
+        val channel = if (alert) {
+            RideLinkApplication.CONNECTION_ACTIVE_CHANNEL_ID
+        } else {
+            RideLinkApplication.CONNECTION_QUIET_CHANNEL_ID
+        }
+        val builder = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_notification_rider)
             .setContentTitle(spec.title)
             .setContentText(spec.text)
             .setOngoing(true)
             .setOnlyAlertOnce(!alert)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(if (alert) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_LOW)
             .setContentIntent(contentIntent(context))
         spec.actions.forEach(builder::addAction)
 
@@ -171,12 +184,24 @@ object ConnectionNotificationBuilder {
     }
 
     /**
-     * EXPERIMENT: Samsung's own (One UI 7 era) opt-in for Live Notifications and
-     * the Now Bar. These keys come from unofficial developer blogs, not Samsung
-     * documentation, and Samsung reportedly honors them only for allowed apps.
-     * Phones that do not know them simply ignore the extras.
+     * EXPERIMENT: Samsung-specific opt-in for the status-bar pill / Now Bar.
+     * The keys come from unofficial developer write-ups, not Samsung
+     * documentation. Phones that do not know them simply ignore the extras.
+     *
+     * - [SAMSUNG_PROMOTED_PATH] = true: no `style` extra (reported to send the
+     *   notification down Samsung's private-card path) and
+     *   `automation = true` (reported to make One UI 8.5/9 treat it as a
+     *   normal Android 16 Live Update, like other phones), plus a pill
+     *   background colour.
+     * - false: the previous private-card extras, unchanged.
      */
     private fun samsungExtras(primary: String, secondary: String, chip: String?): Bundle {
+        if (SAMSUNG_PROMOTED_PATH) {
+            return bundleOf(
+                "android.ongoingActivityNoti.automation" to true,
+                "android.ongoingActivityNoti.chipBgColor" to CHIP_BACKGROUND_COLOR,
+            )
+        }
         val extras = bundleOf(
             "android.ongoingActivityNoti.style" to 1,
             "android.ongoingActivityNoti.primaryInfo" to primary,
@@ -210,8 +235,12 @@ object ConnectionNotificationBuilder {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    private fun disconnectAction(context: Context, role: ConnectionRole): NotificationCompat.Action =
-        action(context, role, NotificationActionReceiver.ACTION_DISCONNECT, "Disconnect", REQUEST_CODE_DISCONNECT)
+    private fun disconnectAction(
+        context: Context,
+        role: ConnectionRole,
+        title: String = "Disconnect",
+    ): NotificationCompat.Action =
+        action(context, role, NotificationActionReceiver.ACTION_DISCONNECT, title, REQUEST_CODE_DISCONNECT)
 
     /**
      * An action that needs the microphone (Call, Accept). A notification
@@ -269,6 +298,10 @@ object ConnectionNotificationBuilder {
         )
         return NotificationCompat.Action.Builder(R.drawable.ic_notification_rider, title, pendingIntent).build()
     }
+
+    // One switch to go back to the previous Samsung extras (see samsungExtras).
+    private const val SAMSUNG_PROMOTED_PATH = true
+    private const val CHIP_BACKGROUND_COLOR = 0xFF1565C0.toInt() // app blue, ui/theme/Theme.kt
 
     private const val REQUEST_CODE_CONTENT = 0
     private const val REQUEST_CODE_CANCEL_OFFER = 1

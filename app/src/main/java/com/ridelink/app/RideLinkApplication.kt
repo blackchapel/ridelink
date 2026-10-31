@@ -50,15 +50,33 @@ class RideLinkApplication : Application() {
         )
 
         // Once paired, this is the primary way to control voice chat without
-        // opening the app -- HIGH so pairing and an incoming call both alert.
+        // opening the app. Two channels, because a channel's importance (not a
+        // per-notification flag) decides whether a heads-up appears, and some
+        // phones pop one up the first time a notification lands on a HIGH
+        // channel even with "only alert once" set:
+        // - ALERT (HIGH): used only for the moments worth interrupting for --
+        //   just paired and an incoming voice request -- while the app is in
+        //   the background.
+        // - QUIET (LOW): the same notification the rest of the time, including
+        //   everything that happens while the app is open.
         // Shared by both roles: only one role ever runs per install.
         manager.createNotificationChannel(
             NotificationChannel(
                 CONNECTION_ACTIVE_CHANNEL_ID,
-                "Connected -- voice chat controls",
+                "Pairing and voice chat alerts",
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
-                description = "Shows once paired, with disconnect and voice chat controls (accept, reject, mute, output, end)."
+                description = "Alerts you when your phone pairs or the other phone asks for a voice chat while RideLink is in the background."
+            },
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CONNECTION_QUIET_CHANNEL_ID,
+                "Connected -- controls",
+                NotificationManager.IMPORTANCE_LOW,
+            ).apply {
+                description = "Shows once paired, with call, disconnect and voice chat controls (accept, reject, mute, output, end). Silent."
+                setShowBadge(false)
             },
         )
 
@@ -73,6 +91,7 @@ class RideLinkApplication : Application() {
         const val PILLION_STATUS_CHANNEL_ID = "pillion_listening"
         const val RIDER_ROUTE_CHANNEL_ID = "rider_route_received"
         const val CONNECTION_ACTIVE_CHANNEL_ID = "connection_active"
+        const val CONNECTION_QUIET_CHANNEL_ID = "connection_quiet"
         private const val LEGACY_VOICE_CALL_CHANNEL_ID = "voice_call_active"
     }
 }
