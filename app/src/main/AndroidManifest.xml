@@ -23,6 +23,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android 16+ "Live Updates": lets the connected-status notification be
+         promoted to the status-bar chip / Samsung Now Bar. A normal
+         (non-runtime) permission; ignored on older Android. -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
 
     <!-- Voice chat: local mic capture/playback over the same Nearby link,
          still no internet/server involved. -->
@@ -51,6 +55,13 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.RideLink">
 
+        <!-- Samsung-specific opt-in for the Now Bar / Live Notifications
+             (see ConnectionNotificationBuilder). Taken from an unofficial
+             developer blog; Samsung may ignore it unless this app is allowed. -->
+        <meta-data
+            android:name="com.samsung.android.support.ongoing_activity"
+            android:value="true" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -78,18 +89,29 @@
         </activity>
 
         <!-- Keeps listening for a route, and launching Google Maps for each
-             one, while the rider has RideLink backgrounded. -->
+             one, while the rider has RideLink backgrounded. Declares the
+             superset of types it may use: "microphone" is only actually
+             active while a voice chat call is in progress (see
+             ConnectionNotificationHost), added/removed dynamically rather
+             than held the whole time. -->
         <service
             android:name=".rider.RiderForegroundService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|microphone" />
 
-        <!-- Held only for the duration of an active voice chat call, by
-             whichever role started or accepted it. -->
+        <!-- Mirrors RiderForegroundService for the Pillion role. -->
         <service
-            android:name=".voicechat.VoiceCallForegroundService"
+            android:name=".pillion.PillionForegroundService"
             android:exported="false"
-            android:foregroundServiceType="microphone" />
+            android:foregroundServiceType="connectedDevice|microphone" />
+
+        <!-- Handles taps on the connected-status notification's action
+             buttons (Voice Chat, Accept/Decline, Mute, End, Disconnect).
+             Every PendingIntent targets it explicitly, so no intent-filter
+             is needed. -->
+        <receiver
+            android:name=".notifications.NotificationActionReceiver"
+            android:exported="false" />
 
     </application>
 </manifest>
