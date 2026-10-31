@@ -45,6 +45,19 @@ part of the change that touches them -- see `CLAUDE.md`.
   or the OS rejects/ignores the type change on some version/OEM), the
   documented fallback is to reintroduce a second, call-scoped foreground
   service rather than assume the single-service design forward.
+- **Crash fixes in this round come from reading the code, not from a
+  stack trace.** Fixed: voice calls started without the microphone
+  permission or with the mic busy, microphone service type requested from
+  the background (now taken at offer/accept time), Disconnect/End via a
+  start-service intent to a service that may not be running, teardown
+  order, simultaneous Call, endless ringing, a stale screen after
+  Disconnect from the notification, and Maps launch failures. If a crash
+  remains, the role picker's "Share report" gives the stack trace.
+- **If Android refuses the microphone service type** (permission revoked,
+  privacy switch, restricted OEM background rules) the call does not start
+  and a Toast says so; there is no retry or in-notification explanation.
+- **No automatic reconnect** after the connection drops (still "reopen to
+  try again"); the unmerged battery branch adds that.
 - **Channel-switch + `setOnlyAlertOnce` alerting behavior is not
   documented with certainty** across Android versions/OEMs -- needs
   real-device confirmation that "just connected" and "incoming offer"

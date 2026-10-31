@@ -6,6 +6,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.util.Log
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
@@ -20,6 +22,7 @@ import com.ridelink.app.notifications.ConnectionNotificationBuilder
 import com.ridelink.app.notifications.ConnectionNotificationHost
 import com.ridelink.app.notifications.ConnectionRole
 import com.ridelink.app.notifications.launchConnectionNotificationUpdates
+import com.ridelink.app.crashGuard
 import com.ridelink.app.voicechat.VoiceChatState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -60,29 +63,35 @@ class RiderForegroundService : Service(), ConnectionNotificationHost {
     override fun onBind(intent: Intent?) = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP_LISTENING) {
-            stopListening()
-        } else {
-            startListening()
-        }
+        startListening()
         return START_NOT_STICKY
     }
 
     private fun startListening() {
         if (serviceScope != null) return // already running -- re-Start is a no-op
 
-        ServiceCompat.startForeground(
-            this,
-            STATUS_NOTIFICATION_ID,
-            ConnectionNotificationBuilder.build(
-                this, ConnectionRole.RIDER, NearbyState.Idle, VoiceChatState.IDLE, null, alert = false,
-            ),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
-        )
+        try {
+            ServiceCompat.startForeground(
+                this,
+                STATUS_NOTIFICATION_ID,
+                ConnectionNotificationBuilder.build(
+                    this, ConnectionRole.RIDER, NearbyState.Idle, VoiceChatState.IDLE, null, alert = false,
+                ),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+            )
+        } catch (e: Exception) {
+            // Android refused to make this a foreground service (missing
+            // Bluetooth/Nearby permission, or started from a state where that
+            // is not allowed). Without this the app would crash.
+            Log.e(TAG, "Could not start foreground service", e)
+            Toast.makeText(this, "RideLink couldn't start in the background. Check its permissions.", Toast.LENGTH_LONG).show()
+            stopSelf()
+            return
+        }
         RiderSession.start(applicationContext)
         ConnectionNotificationHost.current = this
 
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + crashGuard(TAG))
         serviceScope = scope
         RiderSession.voiceChat?.let { voiceChat ->
             scope.launchConnectionNotificationUpdates(
@@ -99,15 +108,19 @@ class RiderForegroundService : Service(), ConnectionNotificationHost {
                 if (AppVisibility.isForeground.value) return@collect
                 val peerName = (RiderSession.connectionState.value as? NearbyState.Connected)
                     ?.let { formatPeerName(it.endpointName) }
-                NotificationManagerCompat.from(this@RiderForegroundService)
-                    .notify(ROUTE_NOTIFICATION_ID, buildRouteNotification(link, peerName))
+                runCatching {
+                    NotificationManagerCompat.from(this@RiderForegroundService)
+                        .notify(ROUTE_NOTIFICATION_ID, buildRouteNotification(link, peerName))
+                }
             }
         }
     }
 
-    private fun stopListening() {
-        RiderSession.reset()
+    override fun stopListening() {
+        // Unregister first: resetting the session ends any call, which would
+        // otherwise try to change this (now stopping) service's foreground type.
         if (ConnectionNotificationHost.current === this) ConnectionNotificationHost.current = null
+        RiderSession.reset()
         serviceScope?.cancel()
         serviceScope = null
         NotificationManagerCompat.from(this).apply {
@@ -119,8 +132,8 @@ class RiderForegroundService : Service(), ConnectionNotificationHost {
     }
 
     override fun onDestroy() {
-        RiderSession.reset()
         if (ConnectionNotificationHost.current === this) ConnectionNotificationHost.current = null
+        RiderSession.reset()
         serviceScope?.cancel()
         serviceScope = null
         NotificationManagerCompat.from(this).apply {
@@ -130,32 +143,30 @@ class RiderForegroundService : Service(), ConnectionNotificationHost {
         super.onDestroy()
     }
 
-    override fun enterCallType() {
-        ServiceCompat.startForeground(
-            this,
-            STATUS_NOTIFICATION_ID,
-            ConnectionNotificationBuilder.build(
-                this,
-                ConnectionRole.RIDER,
-                RiderSession.connectionState.value,
-                VoiceChatState.ACTIVE,
-                RiderSession.voiceChat,
-                alert = false,
-            ),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
-        )
-    }
+    override fun enterCallType(): Boolean = changeForegroundType(withMicrophone = true)
 
     override fun exitCallType() {
+        changeForegroundType(withMicrophone = false)
+    }
+
+    // False if Android refused (no microphone permission, or the app is in a
+    // state where a microphone service may not start). Never throws.
+    private fun changeForegroundType(withMicrophone: Boolean): Boolean = try {
+        var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        if (withMicrophone) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         ServiceCompat.startForeground(
             this,
             STATUS_NOTIFICATION_ID,
             ConnectionNotificationBuilder.build(
                 this, ConnectionRole.RIDER, RiderSession.connectionState.value,
-                VoiceChatState.IDLE, RiderSession.voiceChat, alert = false,
+                RiderSession.voiceChat?.callState?.value ?: VoiceChatState.IDLE, RiderSession.voiceChat, alert = false,
             ),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+            type,
         )
+        true
+    } catch (e: Exception) {
+        Log.e(TAG, "Could not change foreground service type (microphone=$withMicrophone)", e)
+        false
     }
 
     private fun buildRouteNotification(link: String, peerName: String?): Notification {
@@ -190,12 +201,9 @@ class RiderForegroundService : Service(), ConnectionNotificationHost {
         private const val STATUS_NOTIFICATION_ID = 1001
         private const val ROUTE_NOTIFICATION_ID = 1002
         private const val REQUEST_CODE_ROUTE = 1
-        private const val ACTION_STOP_LISTENING = "com.ridelink.app.rider.STOP_LISTENING"
+        private const val TAG = "RiderService"
 
         fun startIntent(context: Context): Intent =
             Intent(context, RiderForegroundService::class.java)
-
-        fun stopIntent(context: Context): Intent =
-            Intent(context, RiderForegroundService::class.java).setAction(ACTION_STOP_LISTENING)
     }
 }

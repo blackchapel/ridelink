@@ -4,9 +4,12 @@ import android.app.Application
 import android.content.Context
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
+import com.ridelink.app.crashGuard
 import com.ridelink.app.nearby.ControlMessage
 import com.ridelink.app.nearby.NearbyManager
 import com.ridelink.app.nearby.NearbyState
+import com.ridelink.app.notifications.ConnectionRole
+import com.ridelink.app.notifications.stopConnection
 import com.ridelink.app.voicechat.VoiceChatSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +35,12 @@ object PillionSession {
     var voiceChat: VoiceChatSession? = null
         private set
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + crashGuard("PillionSession"))
+
+    // True from start() until reset(). Lets the UI notice the session ended
+    // while it was on screen (e.g. Disconnect tapped in the notification).
+    private val _isActive = MutableStateFlow(false)
+    val isActive: StateFlow<Boolean> = _isActive.asStateFlow()
 
     private val _connectionState = MutableStateFlow<NearbyState>(NearbyState.Idle)
     val connectionState: StateFlow<NearbyState> = _connectionState.asStateFlow()
@@ -55,6 +63,7 @@ object PillionSession {
         manager = created
         voiceChat = VoiceChatSession(appContext, created)
         _connectionState.value = NearbyState.Idle
+        _isActive.value = true
 
         scope.launch {
             created.state.collect { _connectionState.value = it }
@@ -76,6 +85,7 @@ object PillionSession {
     }
 
     fun reset() {
+        _isActive.value = false
         voiceChat?.shutdown()
         voiceChat = null
         manager?.stop()
@@ -96,6 +106,7 @@ class PillionViewModel(application: Application) : AndroidViewModel(application)
     val connectionState: StateFlow<NearbyState> = PillionSession.connectionState
     val capturedLink: StateFlow<String?> = PillionSession.capturedLink
     val lastSentLink: StateFlow<String?> = PillionSession.lastSentLink
+    val isActive: StateFlow<Boolean> = PillionSession.isActive
     val voiceChat: VoiceChatSession? get() = PillionSession.voiceChat
 
     fun start() {
@@ -104,7 +115,6 @@ class PillionViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun stop() {
-        val context = getApplication<Application>()
-        ContextCompat.startForegroundService(context, PillionForegroundService.stopIntent(context))
+        stopConnection(ConnectionRole.PILLION)
     }
 }

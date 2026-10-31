@@ -17,6 +17,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +36,7 @@ fun RiderScreen(onBack: () -> Unit) {
     val viewModel: RiderViewModel = viewModel()
     val context = LocalContext.current
     val connectionState by viewModel.connectionState.collectAsState()
+    val isActive by viewModel.isActive.collectAsState()
     val lastRouteOpenedAt by viewModel.lastRouteOpenedAt.collectAsState()
 
     // Cosmetic only -- the notification (and the automatic Maps launch) both
@@ -41,6 +45,14 @@ fun RiderScreen(onBack: () -> Unit) {
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { }
+
+    // The session can end while this screen is open -- Disconnect tapped in
+    // the notification. Go back to the role picker instead of sitting on a
+    // dead "Starting..." screen.
+    var wasActive by remember { mutableStateOf(false) }
+    LaunchedEffect(isActive) {
+        if (isActive) wasActive = true else if (wasActive) onBack()
+    }
 
     DisposableEffect(Unit) {
         viewModel.start()

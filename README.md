@@ -27,13 +27,14 @@ For the technical architecture and module-by-module breakdown, see
    listening) or the rider's phone is locked. A tapped "new route"
    notification also opens it, as a second path.
 4. Once paired, both phones show a high-priority persistent notification
-   with the controls that make sense right then -- **Disconnect** when just
-   connected, **Reject / Accept** on an incoming voice request, **Mute /
+   with the controls that make sense right then -- **Call / Disconnect** when
+   just connected, **Reject / Accept** on an incoming voice request, **Mute /
    Output / End** during a call (Output cycles Speaker, Call speaker,
-   Bluetooth; Mute becomes Unmute) -- so a call can be answered, muted,
-   re-routed or ended without opening the app. Starting a call is done in
-   the app (while you are the one calling, the notification shows
-   **Cancel**). The notification is also marked as an Android 16+ "Live
+   Bluetooth; Mute becomes Unmute) -- so a call can be started, answered,
+   muted, re-routed or ended without opening the app (while you are the one
+   calling, the notification shows **Cancel**). If the microphone has not
+   been allowed yet, Call / Accept open RideLink to ask first, then carry
+   on. The notification is also marked as an Android 16+ "Live
    Update", so phones that support it (Samsung's status-bar pill / Now Bar)
    can promote it; everywhere else it is the same plain notification (its
    buttons show once expanded). While RideLink is open, it does not
@@ -107,7 +108,7 @@ physical Android devices:
    enable Bluetooth/Wi-Fi if asked.
 2. Device A: "I'm the Pillion". Device B: "I'm the Rider". Both screens
    should show "Connected" within a few seconds, and both devices should now
-   show the high-priority connected notification with `[Disconnect]`. On a
+   show the high-priority connected notification with `[Call] [Disconnect]`. On a
    phone that supports Live Updates (Samsung One UI 8/9: switch on Developer
    options > "Live notifications for all apps" if it is off), the status-bar
    pill ("Linked") and Now Bar card may appear too. The "Live Updates"
@@ -117,17 +118,21 @@ physical Android devices:
    Google Maps navigation with no further taps -- try this again with
    Device B's screen off/RideLink backgrounded, and again while it's
    already mid-navigation from a previous share.
-4. Voice chat: start a call **in the app** on one device (its notification
-   shows `[Cancel]` while it waits). The other device's notification
+4. Voice chat: tap **Call** in the notification on one device (it shows
+   `[Cancel]` while it waits; with the microphone not yet allowed it opens
+   RideLink to ask first; with no answer it stops ringing after 45 s). The other device's notification
    should alert and show `[Reject] [Accept]`. Tap Accept from the
    notification -- both should switch to `[Mute] [<output>] [End]` and
    audio should flow both ways, with a running timer on the notification.
    Try Mute (label flips to Unmute, the status pill says "Muted"), Output
    (cycles the output and the label follows) and End (both return to
-   `[Disconnect]`). Also confirm Reject on an incoming request reverts the
+   `[Call] [Disconnect]`). Also tap Call on both phones at the same moment --
+   they should simply start talking, not both wait. Also confirm Reject on an incoming request reverts the
    caller's notification. Repeat with the other device as the caller.
 5. Disconnect, from the notification: tap it while just connected and the
-   Nearby connection should tear down and the notification disappear.
+   Nearby connection should tear down and the notification disappear. Do it
+   with RideLink open too: the screen should return to the role picker. If
+   the app ever crashes, reopen it -- the role picker shows "Share report".
 6. App open vs closed: with RideLink open on the rider phone, have the
    pillion send a route and start a voice request -- expect no route
    notification, no heads-up, no sound (Maps still opens). Repeat with the

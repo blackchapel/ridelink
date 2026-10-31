@@ -7,6 +7,7 @@ import android.app.NotificationManager
 class RideLinkApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        CrashLog.install(this)
         AppVisibility.init()
         val manager = getSystemService(NotificationManager::class.java)
 

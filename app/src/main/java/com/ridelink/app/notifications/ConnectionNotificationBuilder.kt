@@ -1,12 +1,17 @@
 package com.ridelink.app.notifications
 
+import android.Manifest
 import android.app.Notification
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.core.os.bundleOf
+import com.ridelink.app.EXTRA_VOICE_ACTION
+import com.ridelink.app.EXTRA_VOICE_ROLE
 import com.ridelink.app.MainActivity
 import com.ridelink.app.R
 import com.ridelink.app.RideLinkApplication
@@ -22,7 +27,7 @@ import com.ridelink.app.voicechat.VoiceChatState
  * connected -- a high-priority notification whose buttons track
  * [VoiceChatState]:
  *
- * - connected:     [Disconnect]
+ * - connected:     [Call] [Disconnect]
  * - we're calling: [Cancel]
  * - incoming:      [Reject] [Accept]
  * - in call:       [Mute/Unmute] [<current output>] [End]
@@ -103,7 +108,10 @@ object ConnectionNotificationBuilder {
                 title = "Connected",
                 text = "$peerRole · $peerName",
                 chip = "Linked",
-                actions = listOf(disconnectAction(context, role)),
+                actions = listOf(
+                    micAction(context, role, NotificationActionReceiver.ACTION_OFFER, "Call", REQUEST_CODE_OFFER),
+                    disconnectAction(context, role),
+                ),
             )
             VoiceChatState.OFFERING -> Spec(
                 title = "Calling $peerRole",
@@ -119,7 +127,7 @@ object ConnectionNotificationBuilder {
                 chip = "Voice",
                 actions = listOf(
                     action(context, role, NotificationActionReceiver.ACTION_DECLINE, "Reject", REQUEST_CODE_DECLINE),
-                    action(context, role, NotificationActionReceiver.ACTION_ACCEPT, "Accept", REQUEST_CODE_ACCEPT),
+                    micAction(context, role, NotificationActionReceiver.ACTION_ACCEPT, "Accept", REQUEST_CODE_ACCEPT),
                 ),
             )
             VoiceChatState.ACTIVE -> Spec(
@@ -205,6 +213,39 @@ object ConnectionNotificationBuilder {
     private fun disconnectAction(context: Context, role: ConnectionRole): NotificationCompat.Action =
         action(context, role, NotificationActionReceiver.ACTION_DISCONNECT, "Disconnect", REQUEST_CODE_DISCONNECT)
 
+    /**
+     * An action that needs the microphone (Call, Accept). A notification
+     * button cannot ask for the permission, and starting a call without it
+     * fails, so until it is granted the button opens RideLink, which asks and
+     * then carries the action out ([MainActivity] handles EXTRA_VOICE_ACTION).
+     */
+    private fun micAction(
+        context: Context,
+        role: ConnectionRole,
+        actionName: String,
+        title: String,
+        requestCodeBase: Int,
+    ): NotificationCompat.Action {
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        if (granted) return action(context, role, actionName, title, requestCodeBase)
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            action = ACTION_ASK_MIC_THEN
+            putExtra(EXTRA_VOICE_ACTION, actionName)
+            putExtra(EXTRA_VOICE_ROLE, role.name)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val requestCode = requestCodeBase + 200 + if (role == ConnectionRole.RIDER) 0 else 100
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Action.Builder(R.drawable.ic_notification_rider, title, pendingIntent).build()
+    }
+
     private fun action(
         context: Context,
         role: ConnectionRole,
@@ -237,4 +278,6 @@ object ConnectionNotificationBuilder {
     private const val REQUEST_CODE_END_CALL = 5
     private const val REQUEST_CODE_DISCONNECT = 6
     private const val REQUEST_CODE_CYCLE_OUTPUT = 7
+    private const val REQUEST_CODE_OFFER = 8
+    private const val ACTION_ASK_MIC_THEN = "com.ridelink.app.ASK_MIC_THEN"
 }

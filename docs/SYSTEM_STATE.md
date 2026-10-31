@@ -57,8 +57,10 @@ Two roles, one pairing, no server anywhere:
     notification for the current `NearbyState` + `VoiceChatState`, per
     role. Quiet/LOW while not yet connected; HIGH once connected, with
     plain `addAction()` buttons (no CallStyle, no custom layout, so it is
-    eligible for promotion and looks the same everywhere): `[Disconnect]`
-    connected, `[Cancel]` while we are calling, `[Reject] [Accept]`
+    eligible for promotion and looks the same everywhere): `[Call]
+    [Disconnect]` connected (Call and Accept are activity PendingIntents
+    that open `MainActivity`, which asks for `RECORD_AUDIO` and then runs the
+    action, while the microphone permission is missing), `[Cancel]` while we are calling, `[Reject] [Accept]`
     incoming, `[Mute/Unmute] [<current output>] [End]` in a call (a
     chronometer shows the call time without re-posting every second).
     It also requests Android 16+ Live Update promotion
@@ -80,15 +82,24 @@ Two roles, one pairing, no server anywhere:
     the dedicated Live Updates settings action isn't in compileSdk 36).
   - `NotificationActionReceiver.kt` -- manifest-registered
     `BroadcastReceiver` handling every button tap (cancel/accept/
-    decline/mute-toggle/cycle-output/end/disconnect), dispatched to the tapped role's
-    `RiderSession`/`PillionSession`. Disconnect routes through the
-    owning service's stop-intent (not a bare `reset()`), since only that
-    also cancels the notification and stops the service.
+    offer/decline/mute-toggle/cycle-output/end/disconnect), dispatched to the tapped role's
+    `RiderSession`/`PillionSession`; any exception is caught and written to
+    `CrashLog`. Disconnect goes through `stopConnection()` (not a bare
+    `reset()`), which calls `ConnectionNotificationHost.current.stopListening()`
+    -- a plain method call, never a start-service intent, because a stop
+    intent to a service that is no longer running makes Android kill the app
+    ("did not call startForeground").
   - `ConnectionNotificationHost.kt` -- tiny interface + a single
     `current` holder, implemented by whichever role's foreground service
     is running, so `VoiceChatSession` can trigger the microphone
     foreground-service-type change (see Voice chat below) without
-    depending on either service class directly.
+    depending on either service class directly. `enterCallType()` returns
+    false if Android refuses; `stopListening()` is how Disconnect/End stop
+    the service.
+- `CrashGuard.kt` -- `crashGuard(tag)` `CoroutineExceptionHandler` used by
+  every long-lived scope (sessions, services, voice chat), and `CrashLog`,
+  which keeps the last uncaught crash / swallowed background error in
+  `filesDir/last_crash.txt`; the role picker offers to share it.
 - `AppVisibility.kt` -- whether RideLink is in the foreground (via
   `ProcessLifecycleOwner`, which ignores rotation), used to keep alerting
   notifications quiet while the app is open.
@@ -121,10 +132,14 @@ Two roles, one pairing, no server anywhere:
     (`VoiceChatState`), mute, and the sequence-number gap-skip receive
     policy (stale/duplicate chunks dropped, gaps jumped over rather than
     waited for -- see `docs/KNOWN_GAPS.md` for the trade-off this
-    implies). `beginCall()`/`endCallLocally()` call
-    `ConnectionNotificationHost.current?.enterCallType()`/`exitCallType()`
-    -- there's no separate call-specific foreground service anymore (see
-    below).
+    implies). The service's `microphone` type is taken when a call is
+    *offered or accepted* (while the user's tap still allows it -- Android
+    refuses it from the background) and held until the call ends
+    (`holdMicType`/`releaseMicType`); `startCall()` rolls everything back and
+    shows a Toast if the microphone is missing or busy. Both sides offering
+    at once start the call; an unanswered offer times out after 45 s;
+    `shutdown()` cancels the session's scope. There's no separate
+    call-specific foreground service anymore (see below).
   - `VoiceChatControls.kt` -- shared in-app Compose UI for both roles
     (offer/accept/decline/mute/end), independent of and in addition to
     the notification controls above.

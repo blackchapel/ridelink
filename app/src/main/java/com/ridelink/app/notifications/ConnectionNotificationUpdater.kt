@@ -38,10 +38,14 @@ internal fun CoroutineScope.launchConnectionNotificationUpdates(
                     incomingOffer = callState == VoiceChatState.INCOMING_OFFER,
                     foreground = foreground,
                 )
-                NotificationManagerCompat.from(context).notify(
-                    notificationId,
-                    ConnectionNotificationBuilder.build(context, role, nearbyState, callState, voiceChat, alert),
-                )
+                // A failed refresh of the notification must never end the
+                // collector (it would then stop updating for good) or crash.
+                runCatching {
+                    NotificationManagerCompat.from(context).notify(
+                        notificationId,
+                        ConnectionNotificationBuilder.build(context, role, nearbyState, callState, voiceChat, alert),
+                    )
+                }
             }
     }
 }
