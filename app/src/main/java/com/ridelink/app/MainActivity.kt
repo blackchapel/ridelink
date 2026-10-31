@@ -1,6 +1,7 @@
 package com.ridelink.app
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -67,6 +68,9 @@ class MainActivity : ComponentActivity() {
     // allowed: held here while the permission prompt is up.
     private var pendingVoiceAction: Pair<ConnectionRole, String>? = null
 
+    // Lint's Fragment-version check is about FragmentActivity; this is a plain
+    // ComponentActivity, so it does not apply.
+    @SuppressLint("InvalidFragmentVersionForActivityResult")
     private val micPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val pending = pendingVoiceAction
         pendingVoiceAction = null
