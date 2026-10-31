@@ -39,11 +39,8 @@ Two roles, one pairing, no server anywhere:
 - `ShareReceiverActivity.kt` -- the `ACTION_SEND` target that appears in
   Google Maps' share sheet; captures the shared link for the Pillion
   side.
-- `RideLinkApplication.kt` -- registers the app's notification channels:
-  per-role pre-connection status (LOW), new-route alert (HIGH), and the
-  shared connected/voice-chat-controls channel (HIGH, see `notifications/`
-  below). Also deletes the old separate call-active channel on startup so
-  existing installs don't keep an orphaned entry.
+- `RideLinkApplication.kt` -- registers the app's three notification
+  channels (rider listening status, new-route alert, voice-call status).
 - `nearby/NearbyManager.kt` -- thin wrapper around Nearby Connections.
   Owns the connection lifecycle/state (`NearbyState`), a small tagged
   `ControlMessage` protocol over BYTES payloads (route link,
@@ -51,81 +48,18 @@ Two roles, one pairing, no server anywhere:
   sequence-numbered audio-chunk protocol (`AudioChunk`,
   `sendAudioChunk`/`incomingAudioChunks`) -- see Voice chat below for why
   audio doesn't use Nearby's STREAM payload type.
-- `notifications/` -- the single persistent notification shown per role,
-  both pre- and post-connection:
-  - `ConnectionNotificationBuilder.kt` -- stateless; builds the
-    notification for the current `NearbyState` + `VoiceChatState`, per
-    role. Quiet/LOW while not yet connected; HIGH once connected, with
-    plain `addAction()` buttons (no CallStyle, no custom layout, so it is
-    eligible for promotion and looks the same everywhere; posted on the
-    silent `connection_quiet` channel (LOW), and on the HIGH
-    `connection_active` alert channel only for an update with `alert = true`,
-    because a first post on a HIGH channel can heads-up on some phones even
-    with `setOnlyAlertOnce`; the not-connected status notification has a
-    `[Stop]` button): `[Call]
-    [Disconnect]` connected (Call and Accept are activity PendingIntents
-    that open `MainActivity`, which asks for `RECORD_AUDIO` and then runs the
-    action, while the microphone permission is missing), `[Cancel]` while we are calling, `[Reject] [Accept]`
-    incoming, `[Mute/Unmute] [<current output>] [End]` in a call (a
-    chronometer shows the call time without re-posting every second).
-    It also requests Android 16+ Live Update promotion
-    (`setRequestPromotedOngoing`, short pill text `setShortCriticalText`:
-    "Linked" / "Call" / "Voice" / "Muted", kept under 7 characters; during
-    an unmuted call the pill shows the chronometer instead) and adds a
-    clearly marked **experimental** block of Samsung-specific extras
-    (`android.ongoingActivityNoti.*`, from unofficial blogs; Samsung may
-    ignore them): with `SAMSUNG_PROMOTED_PATH = true` just `chipBgColor` (no `style`,
-    and never `automation`, which makes One UI brand it "Gemini Intelligence"),
-    otherwise the earlier private-card extras plus the `ongoing_activity` manifest meta-data.
-  - `ConnectionNotificationUpdater.kt` -- `launchConnectionNotificationUpdates`
-    (shared by both role services) re-posts the notification when the
-    connection, call state, mute, audio output or app visibility changes,
-    and `AlertPolicy` decides which updates may alert (only "just paired" and
-    "incoming request", never while the app is in the foreground; a request
-    still ringing when the app is left alerts then).
-  - `NowBarStatusLine.kt` -- small Compose line on both role screens
-    showing `NotificationManager.canPostPromotedNotifications()` and a
-    shortcut to the app's notification settings (`Settings.ACTION_APP_NOTIFICATION_SETTINGS`;
-    the dedicated Live Updates settings action isn't in compileSdk 36).
-  - `NotificationActionReceiver.kt` -- manifest-registered
-    `BroadcastReceiver` handling every button tap (cancel/accept/
-    offer/decline/mute-toggle/cycle-output/end/disconnect), dispatched to the tapped role's
-    `RiderSession`/`PillionSession`; any exception is caught and written to
-    `CrashLog`. Disconnect goes through `stopConnection()` (not a bare
-    `reset()`), which calls `ConnectionNotificationHost.current.stopListening()`
-    -- a plain method call, never a start-service intent, because a stop
-    intent to a service that is no longer running makes Android kill the app
-    ("did not call startForeground").
-  - `ConnectionNotificationHost.kt` -- tiny interface + a single
-    `current` holder, implemented by whichever role's foreground service
-    is running, so `VoiceChatSession` can trigger the microphone
-    foreground-service-type change (see Voice chat below) without
-    depending on either service class directly. `enterCallType()` returns
-    false if Android refuses; `stopListening()` is how Disconnect/End stop
-    the service.
-- `CrashGuard.kt` -- `crashGuard(tag)` `CoroutineExceptionHandler` used by
-  every long-lived scope (sessions, services, voice chat), and `CrashLog`,
-  which keeps the last uncaught crash / swallowed background error in
-  `filesDir/last_crash.txt`; the role picker offers to share it.
-- `AppVisibility.kt` -- whether RideLink is in the foreground (via
-  `ProcessLifecycleOwner`, which ignores rotation), used to keep alerting
-  notifications quiet while the app is open.
 - `permissions/PermissionsGate.kt` -- runtime permission + Bluetooth/
   Wi-Fi-enabled gating shared by both roles before any Nearby call is
   made.
-- `pillion/` -- `PillionViewModel`/`PillionScreen`/`PillionSession`/
-  `PillionForegroundService`. Mirrors `rider/` below (added so voice chat
-  -- and the connected-status notification -- survives Pillion
-  backgrounding too, not just Rider's).
+- `pillion/` -- `PillionViewModel`/`PillionScreen`. `PillionSession` is
+  application-scoped (survives switching away to Google Maps and back)
+  and holds the `NearbyManager` + `VoiceChatSession` for this role.
 - `rider/` -- `RiderViewModel`/`RiderScreen`/`RiderSession`/
   `RiderForegroundService`. `RiderForegroundService`
-  (`foregroundServiceType="connectedDevice|microphone"`) is what keeps
-  the Rider's process alive and able to keep launching Maps while
-  backgrounded; it's the thing that must be running for the app's core
-  promise ("rider never has to touch the phone again") to hold. Also
-  hosts the connected-status notification (see `notifications/` above)
-  and implements `ConnectionNotificationHost` to add/remove its own
-  `microphone` type for the duration of a call.
+  (`foregroundServiceType="connectedDevice"`) is what keeps the Rider's
+  process alive and able to keep launching Maps while backgrounded; it's
+  the thing that must be running for the app's core promise ("rider
+  never has to touch the phone again") to hold.
 - `voicechat/` -- real-time voice chat, layered on top of an
   already-connected `NearbyManager`:
   - `AudioPipeline.kt` -- `AudioCapture` (AudioRecord, 8kHz mono PCM16,
@@ -139,29 +73,14 @@ Two roles, one pairing, no server anywhere:
     (`VoiceChatState`), mute, and the sequence-number gap-skip receive
     policy (stale/duplicate chunks dropped, gaps jumped over rather than
     waited for -- see `docs/KNOWN_GAPS.md` for the trade-off this
-    implies). The service's `microphone` type is taken when a call is
-    *offered or accepted* (while the user's tap still allows it -- Android
-    refuses it from the background) and held until the call ends
-    (`holdMicType`/`releaseMicType`); `startCall()` rolls everything back and
-    shows a Toast if the microphone is missing or busy. Both sides offering
-    at once start the call; an unanswered offer times out after 45 s;
-    `shutdown()` cancels the session's scope. There's no separate
-    call-specific foreground service anymore (see below).
-  - `VoiceChatControls.kt` -- shared in-app Compose UI for both roles
-    (offer/accept/decline/mute/end), independent of and in addition to
-    the notification controls above.
+    implies).
+  - `VoiceCallForegroundService.kt` -- minimal foreground service held
+    only for the duration of an active call
+    (`foregroundServiceType="microphone"`), deliberately separate from
+    `RiderForegroundService`.
+  - `VoiceChatControls.kt` -- shared Compose UI for both roles.
 - `ui/theme/` -- `Theme.kt` (Compose theme) and `ThemePreferences.kt`
   (persisted light/dark choice, defaulting to system theme).
-
-**Note on the dynamic foreground-service-type change**: `RiderForegroundService`/
-`PillionForegroundService` each declare the superset of types they may use
-(`connectedDevice|microphone`) and re-invoke `startForeground()` on the same
-notification ID to add/remove the active `microphone` type for the
-duration of a call, rather than running a second, separate foreground
-service the way this app used to (a deleted `VoiceCallForegroundService`).
-This is a deliberate reversal of an earlier, more cautious design that
-avoided dynamic type changes specifically for lack of real-device
-verification -- see `docs/KNOWN_GAPS.md`.
 
 ## Release pipeline
 
@@ -178,10 +97,8 @@ verification -- see `docs/KNOWN_GAPS.md`.
   1. `build` -- signed `assembleRelease` from any branch using the release
      keystore, `<major.minor>-<branch>.<short-sha>` versionName (no patch
      number -- it's not a tagged release). Uploads the APK as a
-     short-lived workflow artifact; version info and the artifact's numeric
-     id are exposed as job outputs (not its URL: GitHub drops job outputs
-     containing a secret-looking string, and the repo name `ridelink` is
-     masked in logs, so `notify` rebuilds the URL from `github.repository`).
+     short-lived workflow artifact; version info and the artifact's URL
+     are exposed as job outputs.
   2. `notify` (`needs: build`, `if: always()` -- runs even if `build`
      failed) -- posts a Discord embed using `build`'s outputs.
 - `.github/workflows/release.yml` ("Production Release") -- **manual
@@ -231,7 +148,6 @@ verification -- see `docs/KNOWN_GAPS.md`.
 
 ## Pinned versions (as of this snapshot)
 
-AGP `8.9.1`, Gradle `8.11.1`, Kotlin `2.0.21`, Compose BOM `2024.10.01`,
-`play-services-nearby` `19.3.0`, `androidx.core` `1.17.0`,
-`lifecycle-process` `2.8.6`, `compileSdk` `36` / `targetSdk` `35`,
+AGP `8.7.2`, Kotlin `2.0.21`, Compose BOM `2024.10.01`,
+`play-services-nearby` `19.3.0`, `compileSdk`/`targetSdk` `35`,
 `minSdk` `26`, JDK `17`.
