@@ -63,10 +63,14 @@ part of the change that touches them -- see `CLAUDE.md`.
   Live Update promotion only excludes IMPORTANCE_MIN, but if the Now Bar
   behaves differently the fallback is a silent default-importance channel.
 - **Samsung promoted path (`SAMSUNG_PROMOTED_PATH`) is experimental.**
-  Built from community write-ups of One UI 8.5/9 internals (the `automation`
-  extra, no `style` extra); not Samsung documentation. It may fix the slow
-  / background-less status-bar pill, or change the Now Bar card. Set the
-  constant to `false` to restore the earlier extras.
+  Built from community write-ups of One UI 8.5/9 internals (no `style`
+  extra, `chipBgColor`); not Samsung documentation. It may fix the slow /
+  background-less status-bar pill, or change the Now Bar card. Set the
+  constant to `false` to restore the earlier extras. Do not use the
+  `automation` extra: One UI shows it as "Gemini Intelligence" (Gemini icon,
+  name and rainbow border). Without Samsung approving the package, RideLink
+  appears only when Developer options > "Live notifications for all apps"
+  is on.
 - **Channel-switch + `setOnlyAlertOnce` alerting behavior is not
   documented with certainty** across Android versions/OEMs -- needs
   real-device confirmation that "just connected" and "incoming offer"

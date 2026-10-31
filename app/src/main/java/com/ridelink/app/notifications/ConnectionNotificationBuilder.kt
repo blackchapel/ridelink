@@ -189,18 +189,17 @@ object ConnectionNotificationBuilder {
      * documentation. Phones that do not know them simply ignore the extras.
      *
      * - [SAMSUNG_PROMOTED_PATH] = true: no `style` extra (reported to send the
-     *   notification down Samsung's private-card path) and
-     *   `automation = true` (reported to make One UI 8.5/9 treat it as a
-     *   normal Android 16 Live Update, like other phones), plus a pill
-     *   background colour.
+     *   notification down Samsung's private-card path), so it is a normal
+     *   Android 16 Live Update, plus a pill background colour. One UI shows it
+     *   once Developer options > "Live notifications for all apps" is on.
+     *   NEVER add `android.ongoingActivityNoti.automation` here: it is
+     *   Samsung's lane for Gemini acting inside an app, and One UI brands the
+     *   pill, the Now Bar card and the border glow as "Gemini Intelligence".
      * - false: the previous private-card extras, unchanged.
      */
     private fun samsungExtras(primary: String, secondary: String, chip: String?): Bundle {
         if (SAMSUNG_PROMOTED_PATH) {
-            return bundleOf(
-                "android.ongoingActivityNoti.automation" to true,
-                "android.ongoingActivityNoti.chipBgColor" to CHIP_BACKGROUND_COLOR,
-            )
+            return bundleOf("android.ongoingActivityNoti.chipBgColor" to CHIP_BACKGROUND_COLOR)
         }
         val extras = bundleOf(
             "android.ongoingActivityNoti.style" to 1,

@@ -74,8 +74,9 @@ Two roles, one pairing, no server anywhere:
     an unmuted call the pill shows the chronometer instead) and adds a
     clearly marked **experimental** block of Samsung-specific extras
     (`android.ongoingActivityNoti.*`, from unofficial blogs; Samsung may
-    ignore them): with `SAMSUNG_PROMOTED_PATH = true` just `automation = true`
-    plus `chipBgColor` (no `style`), otherwise the earlier private-card extras plus the `ongoing_activity` manifest meta-data.
+    ignore them): with `SAMSUNG_PROMOTED_PATH = true` just `chipBgColor` (no `style`,
+    and never `automation`, which makes One UI brand it "Gemini Intelligence"),
+    otherwise the earlier private-card extras plus the `ongoing_activity` manifest meta-data.
   - `ConnectionNotificationUpdater.kt` -- `launchConnectionNotificationUpdates`
     (shared by both role services) re-posts the notification when the
     connection, call state, mute, audio output or app visibility changes,
