@@ -2,6 +2,8 @@ package com.ridelink.app.nearby
 
 import android.content.Context
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.AdvertisingOptions
 import com.google.android.gms.nearby.connection.ConnectionInfo
@@ -23,8 +25,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Rider and pillion are always exactly one pair, so P2P_POINT_TO_POINT is
- * the natural strategy: one advertiser (pillion), one discoverer (rider).
+ * Rider and pillion are always exactly one pair: one advertiser (pillion),
+ * one discoverer (rider), connected over Bluetooth ([Strategy.P2P_CLUSTER]).
  */
 sealed class NearbyState {
     data object Idle : NearbyState()
@@ -83,15 +85,35 @@ data class AudioChunk(val sequenceNumber: Int, val data: ByteArray)
 
 private const val TAG_AUDIO_CHUNK: Byte = 6
 
+private enum class RadioRole { ADVERTISER, DISCOVERER }
+
 /**
  * Thin wrapper around Google Play services' Nearby Connections API.
- * Handles the whole handoff over local Bluetooth/Wi-Fi -- no server involved.
+ * Handles the whole handoff over local Bluetooth -- no server involved.
+ *
+ * Radio lifecycle: advertising/discovery run only until a connection is
+ * established, then stop (scanning/beaconing for a whole ride is pure drain).
+ * An unexpected drop restarts the same role with capped exponential backoff.
+ * All callbacks, the reconnect timer and the public start/stop calls run on
+ * the main thread.
  */
 class NearbyManager(context: Context) {
 
-    private val connectionsClient: ConnectionsClient = Nearby.getConnectionsClient(context)
+    private val appContext = context.applicationContext
+    private val connectionsClient: ConnectionsClient = Nearby.getConnectionsClient(appContext)
+
+    @Volatile
     private var connectedEndpointId: String? = null
     private var pendingEndpointName: String? = null
+
+    private var role: RadioRole? = null
+    private var advertising = false
+    private var discovering = false
+    private var connecting = false
+    private var stopped = false
+    private var reconnectAttempt = 0
+    private var reconnectRunnable: Runnable? = null
+    private val handler = Handler(Looper.getMainLooper())
 
     private val _state = MutableStateFlow<NearbyState>(NearbyState.Idle)
     val state: StateFlow<NearbyState> = _state.asStateFlow()
@@ -109,16 +131,13 @@ class NearbyManager(context: Context) {
 
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
-            when (payload.type) {
-                Payload.Type.BYTES -> {
-                    val bytes = payload.asBytes() ?: return
-                    if (bytes.isNotEmpty() && bytes[0] == TAG_AUDIO_CHUNK) {
-                        decodeAudioChunk(bytes)?.let { _incomingAudioChunks.tryEmit(it) }
-                    } else {
-                        ControlMessage.decode(bytes)?.let { _receivedMessages.tryEmit(it) }
-                    }
-                }
-                else -> Unit
+            if (payload.type != Payload.Type.BYTES) return
+            val bytes = payload.asBytes() ?: return
+            if (bytes.isEmpty()) return
+            if (bytes[0] == TAG_AUDIO_CHUNK) {
+                decodeAudioChunk(bytes)?.let { _incomingAudioChunks.tryEmit(it) }
+            } else {
+                ControlMessage.decode(bytes)?.let { _receivedMessages.tryEmit(it) }
             }
         }
 
@@ -133,55 +152,146 @@ class NearbyManager(context: Context) {
             // Both sides are trusted for this two-person use case: auto-accept.
             pendingEndpointName = info.endpointName
             connectionsClient.acceptConnection(endpointId, payloadCallback)
+                .addOnFailureListener {
+                    connecting = false
+                    scheduleReconnect()
+                }
         }
 
         override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
+            connecting = false
             if (result.status.isSuccess) {
                 connectedEndpointId = endpointId
+                reconnectAttempt = 0
+                cancelReconnect()
+                // Connected: nothing left to find or be found by. Leaving these
+                // running would keep the radios scanning/beaconing all ride.
+                connectionsClient.stopDiscovery()
+                connectionsClient.stopAdvertising()
+                discovering = false
+                advertising = false
                 _state.value = NearbyState.Connected(endpointId, pendingEndpointName ?: "the other device")
             } else {
-                _state.value = NearbyState.Disconnected
+                scheduleReconnect()
             }
         }
 
         override fun onDisconnected(endpointId: String) {
+            connecting = false
             if (connectedEndpointId == endpointId) {
                 connectedEndpointId = null
             }
-            _state.value = NearbyState.Disconnected
+            if (!stopped) scheduleReconnect()
         }
     }
 
     private val endpointDiscoveryCallback = object : EndpointDiscoveryCallback() {
         override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
+            if (stopped || connecting || connectedEndpointId != null) return
+            connecting = true
             connectionsClient.requestConnection(LOCAL_ENDPOINT_NAME, endpointId, connectionLifecycleCallback)
+                .addOnFailureListener {
+                    connecting = false
+                    scheduleReconnect()
+                }
         }
 
         override fun onEndpointLost(endpointId: String) {
-            // Discovery keeps running; onDisconnected handles an active connection dropping.
+            // Discovery keeps running until connected; onDisconnected handles an active connection dropping.
         }
     }
 
+    /** Pillion side. Idempotent: re-entering the screen while already advertising/connected is a no-op. */
     fun startAdvertising() {
-        _state.value = NearbyState.Searching
-        val options = AdvertisingOptions.Builder()
-            .setStrategy(Strategy.P2P_POINT_TO_POINT)
-            .setLowPower(false) // prioritize connection/throughput over battery
-            .build()
-        connectionsClient
-            .startAdvertising(LOCAL_ENDPOINT_NAME, SERVICE_ID, connectionLifecycleCallback, options)
-            .addOnFailureListener { _state.value = NearbyState.Idle }
+        if (role == RadioRole.ADVERTISER && (advertising || connectedEndpointId != null)) return
+        stopped = false
+        role = RadioRole.ADVERTISER
+        reconnectAttempt = 0
+        cancelReconnect()
+        beginAdvertising()
     }
 
+    /** Rider side. Idempotent, same as [startAdvertising]. */
     fun startDiscovery() {
+        if (role == RadioRole.DISCOVERER && (discovering || connectedEndpointId != null)) return
+        stopped = false
+        role = RadioRole.DISCOVERER
+        reconnectAttempt = 0
+        cancelReconnect()
+        beginDiscovery()
+    }
+
+    private fun beginAdvertising() {
         _state.value = NearbyState.Searching
-        val options = DiscoveryOptions.Builder()
-            .setStrategy(Strategy.P2P_POINT_TO_POINT)
+        val options = AdvertisingOptions.Builder()
+            .setStrategy(currentStrategy())
+            // Only matters while pairing (advertising stops on connect): favour finding each other fast.
             .setLowPower(false)
             .build()
+        advertising = true
+        connectionsClient
+            .startAdvertising(LOCAL_ENDPOINT_NAME, SERVICE_ID, connectionLifecycleCallback, options)
+            .addOnFailureListener {
+                advertising = false
+                scheduleReconnect()
+            }
+    }
+
+    private fun beginDiscovery() {
+        _state.value = NearbyState.Searching
+        val options = DiscoveryOptions.Builder()
+            .setStrategy(currentStrategy())
+            .setLowPower(false)
+            .build()
+        discovering = true
         connectionsClient
             .startDiscovery(SERVICE_ID, endpointDiscoveryCallback, options)
-            .addOnFailureListener { _state.value = NearbyState.Idle }
+            .addOnFailureListener {
+                discovering = false
+                scheduleReconnect()
+            }
+    }
+
+    // Bluetooth only: P2P_CLUSTER does not upgrade the link to Wi-Fi Direct, which
+    // keeps the connection stable and cooler on a bike. Both phones must use it.
+    private fun currentStrategy(): Strategy = Strategy.P2P_CLUSTER
+
+    private fun scheduleReconnect() {
+        if (stopped || role == null) return
+        cancelReconnect()
+        if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+            _state.value = NearbyState.Disconnected
+            return
+        }
+        val delayMs = minOf(RECONNECT_BASE_DELAY_MS shl reconnectAttempt, RECONNECT_MAX_DELAY_MS)
+        reconnectAttempt++
+        _state.value = NearbyState.Searching
+        val runnable = Runnable {
+            reconnectRunnable = null
+            if (!stopped && _state.value !is NearbyState.Connected) restartRadio()
+        }
+        reconnectRunnable = runnable
+        handler.postDelayed(runnable, delayMs)
+    }
+
+    private fun cancelReconnect() {
+        reconnectRunnable?.let { handler.removeCallbacks(it) }
+        reconnectRunnable = null
+    }
+
+    private fun restartRadio() {
+        connecting = false
+        when (role) {
+            RadioRole.ADVERTISER -> {
+                connectionsClient.stopAdvertising()
+                beginAdvertising()
+            }
+            RadioRole.DISCOVERER -> {
+                connectionsClient.stopDiscovery()
+                beginDiscovery()
+            }
+            null -> Unit
+        }
     }
 
     fun send(message: ControlMessage) {
@@ -219,9 +329,15 @@ class NearbyManager(context: Context) {
     }
 
     fun stop() {
+        stopped = true
+        cancelReconnect()
+        role = null
         connectionsClient.stopAdvertising()
         connectionsClient.stopDiscovery()
         connectionsClient.stopAllEndpoints()
+        advertising = false
+        discovering = false
+        connecting = false
         connectedEndpointId = null
         _state.value = NearbyState.Idle
     }
@@ -229,5 +345,9 @@ class NearbyManager(context: Context) {
     companion object {
         const val SERVICE_ID = "com.ridelink.SERVICE"
         private val LOCAL_ENDPOINT_NAME = "RideLink-${Build.MODEL}"
+
+        private const val MAX_RECONNECT_ATTEMPTS = 10
+        private const val RECONNECT_BASE_DELAY_MS = 1_000L
+        private const val RECONNECT_MAX_DELAY_MS = 30_000L
     }
 }

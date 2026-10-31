@@ -50,6 +50,12 @@ behavior, not the user's:
 - **No bump**: a pure fix, refactor, docs-only, or CI/process change with
   no behavior addition.
 
+Only bump if the current `MAJOR.MINOR` has already been released (a
+`v<MAJOR.MINOR>.*` tag exists). If `version.properties` is already ahead of
+the last release -- an earlier merged PR bumped it and nothing has shipped
+since -- that bump covers this PR too; bumping again just skips a version
+number.
+
 Apply the bump to `version.properties` as part of the same PR that earns
 it — don't ask the user to classify it, and don't leave it for release
 time (release time only ever adds the automatic patch number on top of

@@ -98,6 +98,21 @@ class AudioRoutingController(context: Context) {
         _selected.value = option
     }
 
+    /**
+     * Undoes whatever [select] set, at call end. Without this a Bluetooth SCO
+     * link (pre-API 31) or a forced communication device (API 31+) outlives
+     * the call, and SCO in particular keeps the Bluetooth radio busy.
+     */
+    @Suppress("DEPRECATION")
+    fun release() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            audioManager.clearCommunicationDevice()
+            return
+        }
+        stopBluetoothScoLegacy()
+        audioManager.isSpeakerphoneOn = false
+    }
+
     @Suppress("DEPRECATION")
     private fun stopBluetoothScoLegacy() {
         audioManager.isBluetoothScoOn = false

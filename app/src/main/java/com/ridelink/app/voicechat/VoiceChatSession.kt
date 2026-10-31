@@ -247,6 +247,9 @@ class VoiceChatSession(private val context: Context, private val nearbyManager: 
         audioStarted = false
         runCatching { audioCapture.stop() }
         runCatching { audioPlayback.stop() }
+        // Undo the output choice (Bluetooth SCO / forced device) so it does
+        // not outlive the call and keep the Bluetooth radio busy.
+        runCatching { routing.release() }
         abandonAudioFocusAndMode()
     }
 

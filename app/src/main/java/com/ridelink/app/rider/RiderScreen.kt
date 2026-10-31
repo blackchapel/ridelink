@@ -15,7 +15,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,19 +24,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ridelink.app.nearby.NearbyState
 import com.ridelink.app.nearby.formatPeerName
-import com.ridelink.app.notifications.NowBarStatusLine
 import com.ridelink.app.voicechat.VoiceChatControls
 
 @Composable
 fun RiderScreen(onBack: () -> Unit) {
     val viewModel: RiderViewModel = viewModel()
     val context = LocalContext.current
-    val connectionState by viewModel.connectionState.collectAsState()
-    val isActive by viewModel.isActive.collectAsState()
-    val lastRouteOpenedAt by viewModel.lastRouteOpenedAt.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val isActive by viewModel.isActive.collectAsStateWithLifecycle()
+    val lastRouteOpenedAt by viewModel.lastRouteOpenedAt.collectAsStateWithLifecycle()
 
     // Cosmetic only -- the notification (and the automatic Maps launch) both
     // keep working even if this is denied, the user just won't see the
@@ -86,8 +85,6 @@ fun RiderScreen(onBack: () -> Unit) {
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(top = 16.dp),
         )
-
-        NowBarStatusLine()
 
         Text(
             text = if (lastRouteOpenedAt != null) {

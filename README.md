@@ -4,7 +4,7 @@ A two-role Android app for a rider (phone mounted on the bike, hands-free
 once riding starts) and a pillion (picks the destination). The pillion
 builds a route in the real Google Maps app and taps Share; RideLink
 captures that share, sends it directly to the rider's phone over a local
-Bluetooth/Wi-Fi connection (Google's Nearby Connections API), and the
+Bluetooth connection (Google's Nearby Connections API), and the
 rider's phone automatically opens Google Maps navigation. **No backend --
 the entire handoff, including voice chat, is phone-to-phone.**
 
@@ -119,8 +119,8 @@ physical Android devices:
    show the high-priority connected notification with `[Call] [Disconnect]`. On a
    phone that supports Live Updates (Samsung One UI 8/9: switch on Developer
    options > "Live notifications for all apps" if it is off), the status-bar
-   pill ("Linked") and Now Bar card may appear too. The "Live Updates"
-   line on the role screen says whether Android allows it.
+   pill ("Linked") and Now Bar card may appear too (the app itself shows no
+   status line for this; look at the phone's notification settings).
 3. On Device A, open Google Maps, build a route, Share -> RideLink.
    Device A shows "Route sent". Device B should automatically launch
    Google Maps navigation with no further taps -- try this again with
@@ -154,3 +154,10 @@ physical Android devices:
 7. Also confirm the existing in-app voice chat controls
    (`VoiceChatControls`) still work independently of the notification,
    including the output picker (speaker/earpiece/Bluetooth).
+8. Voice quality: hold a voice chat for several minutes at riding distance
+   -- it should be clear and steady (raw PCM over the Bluetooth link; there
+   is no codec to switch). Report any breakup.
+9. Reconnect: with both connected, walk one phone out of range (or turn
+   its Bluetooth off and on). Both should drop to "Looking for..." and
+   reconnect on their own within a few tries; **Stop** on the notification
+   ends it. Both phones must be on this build.

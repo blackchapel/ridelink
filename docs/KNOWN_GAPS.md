@@ -18,11 +18,27 @@ part of the change that touches them -- see `CLAUDE.md`.
   each other over Bluetooth Classic, one phone runs two simultaneous
   Bluetooth roles on one radio, which can cause scheduling
   contention/jitter. Flagged during design, never specifically tested.
-- **No compressed codec.** Deliberately deferred, not an oversight: both
-  Bluetooth Classic and Wi-Fi Direct comfortably exceed the current
-  ~128kbps raw 8kHz PCM16 bitrate in normal operation, so bitrate was
-  never shown to be the bottleneck. Revisit only if real-device testing
-  shows the remaining problem is specifically bandwidth-limited.
+- **No compressed codec -- Opus was tried and removed.** An Opus build
+  (Concentus, ~16 kbps) made the voice break up constantly in real use, to
+  the point the two people could not understand each other, so voice is raw
+  8kHz PCM16 again (~128 kbps). Do not reintroduce a codec without a real
+  device A/B. Because the link is now Bluetooth-only (below), raw PCM's
+  bitrate on a Bluetooth link at riding distance is the thing to watch if
+  breakup is ever reported again.
+- **Bluetooth-only link (`P2P_CLUSTER`) trades peak bandwidth for
+  stability.** Chosen because it was steady in real-world use; there is no
+  Wi-Fi Direct upgrade, so range or throughput limits of the Bluetooth link
+  apply. Phones on an older build with `P2P_POINT_TO_POINT` do not find
+  this build.
+- **Reconnect policy is a guess.** Capped backoff (1 s doubling to 30 s,
+  10 attempts, about 3 minutes), then "Disconnected" until the screen is
+  reopened. Both phones search again on any drop, including when the other
+  side deliberately ends, so the surviving phone searches for a few
+  minutes before giving up; the notification shows **Stop** the whole time
+  so it can be ended without opening the app.
+- **Reconnect and the radio-stop-after-connect changes were only tested as
+  part of the earlier optimisation build** (Bluetooth, Opus); not yet
+  re-checked together with raw PCM and the notification feature.
 - **Lossy delivery is a deliberate trade-off, not free.** The
   sequence-number gap-skip receive policy (`VoiceChatSession`) means a
   lost/delayed chunk produces a brief audio glitch/dropout instead of a
@@ -56,8 +72,6 @@ part of the change that touches them -- see `CLAUDE.md`.
 - **If Android refuses the microphone service type** (permission revoked,
   privacy switch, restricted OEM background rules) the call does not start
   and a Toast says so; there is no retry or in-notification explanation.
-- **No automatic reconnect** after the connection drops (still "reopen to
-  try again"); the unmerged battery branch adds that.
 - **Quiet channel vs. the Samsung Now Bar is unverified.** The connected
   notification now lives on a LOW-importance channel except for alerts.
   Live Update promotion only excludes IMPORTANCE_MIN, but if the Now Bar
@@ -86,8 +100,9 @@ part of the change that touches them -- see `CLAUDE.md`.
   limited it to Samsung apps unless Developer options > "Live
   notifications for all apps" is on, and One UI 9's widening is tied to
   Android 17's Metric Style (health, timers, travel) -- nothing found says
-  arbitrary apps are let in. The role screens show whether Android allows
-  promotion. If Samsung needs allow-listing by package name, that is a
+  arbitrary apps are let in. The app no longer shows whether Android allows
+  promotion (the role-screen status line was removed); check the phone's
+  notification settings. If Samsung needs allow-listing by package name, that is a
   request only the app owner can make to Samsung Developer Support.
 - **Whether Samsung shows third-party action buttons on the Now Bar card
   is unconfirmed.** If not, the pill/card show status only and the buttons
@@ -127,13 +142,30 @@ part of the change that touches them -- see `CLAUDE.md`.
   made from. GitHub Actions (`assembleDebug`/`assembleRelease`) is the
   only real compiler check, which is why diffs need careful manual review
   before every push.
-- **`isMinifyEnabled = false`** -- no R8/ProGuard shrinking/obfuscation on
-  release builds yet.
+- **Release builds are minified with R8** (`isMinifyEnabled = true`,
+  `isShrinkResources = true`, `app/proguard-rules.pro`). No keep rules are
+  needed today (Compose, lifecycle and Nearby ship their own); if a release
+  build crashes on something that works in a debug build, suspect a missing
+  keep rule first.
 - **Per-ride-only pairing** -- no "remembered devices" mode; both sides
   re-discover fresh every session by design (v1 scope), not currently
   planned to change.
 
 ## Release pipeline
+
+- **Version code is a branch's commit count, so a build can fail to update
+  over a newer one.** Test Release (and Production Release) set `versionCode`
+  to `git rev-list --count HEAD` of the branch being built. Android refuses
+  to install a lower `versionCode` over a higher one and only says "App not
+  installed". Seen: the notification test build (`18325bc`) was code 26 and
+  the later optimisation test build (`c5dbd73`, a branch cut after `main`
+  squash-merged) was code 21, so it would not update over it. Squash merges
+  make a branch's count drop below an older unsquashed branch's, and a
+  Production Release (counted on `main`) can likewise be lower than a test
+  build already installed. Workaround: uninstall RideLink, then install.
+  **Not fixed yet.** The planned fix is a version code that only goes up
+  (minutes since 1970 in both workflows, about 29.9 million today, so it is
+  above every existing build), a one-way change to the production scheme.
 
 - **Release secrets are managed manually.** No tool available in this
   environment can set GitHub repo secrets (`KEYSTORE_BASE64`,

@@ -11,6 +11,8 @@ and refuses to run if it is missing.
 
 ## Unreleased
 
+## 1.1.0 (2026-10-31)
+
 ### Added
 - **Connected notification with controls:** once the two phones are paired,
   the notification has the buttons that make sense right then -- Call and
@@ -27,6 +29,13 @@ and refuses to run if it is missing.
   to share the report.
 
 ### Changed
+- **Lower battery and heat:** the phones stay on a Bluetooth connection (no
+  Wi-Fi Direct upgrade), stop searching for each other once connected, and
+  release the Bluetooth call audio route when a call ends. Release builds
+  are smaller and shrunk with R8.
+- **Reconnects on its own:** if the connection drops, both phones search
+  again with growing pauses and reconnect without reopening the app; the
+  notification has a Stop button while it searches.
 - Notifications stay quiet while RideLink is open: no "new route" notification
   and no pop-up for pairing or a voice request. They alert only when the app
   is in the background.

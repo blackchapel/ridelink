@@ -15,7 +15,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,20 +24,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ridelink.app.nearby.NearbyState
 import com.ridelink.app.nearby.formatPeerName
-import com.ridelink.app.notifications.NowBarStatusLine
 import com.ridelink.app.voicechat.VoiceChatControls
 
 @Composable
 fun PillionScreen(onBack: () -> Unit) {
     val viewModel: PillionViewModel = viewModel()
     val context = LocalContext.current
-    val connectionState by viewModel.connectionState.collectAsState()
-    val isActive by viewModel.isActive.collectAsState()
-    val capturedLink by viewModel.capturedLink.collectAsState()
-    val lastSentLink by viewModel.lastSentLink.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val isActive by viewModel.isActive.collectAsStateWithLifecycle()
+    val capturedLink by viewModel.capturedLink.collectAsStateWithLifecycle()
+    val lastSentLink by viewModel.lastSentLink.collectAsStateWithLifecycle()
 
     // Cosmetic only -- the notification keeps working even if this is
     // denied, the user just won't see it.
@@ -82,8 +81,6 @@ fun PillionScreen(onBack: () -> Unit) {
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(top = 16.dp),
         )
-
-        NowBarStatusLine()
 
         Text(
             text = when {

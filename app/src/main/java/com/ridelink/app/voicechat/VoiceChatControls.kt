@@ -2,6 +2,9 @@ package com.ridelink.app.voicechat
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -15,8 +18,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -25,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /**
  * Shared voice-chat UI for both roles -- offer/accept/decline, then in-call
@@ -34,8 +39,8 @@ import androidx.core.content.ContextCompat
 @Composable
 fun VoiceChatControls(voiceChat: VoiceChatSession, peerLabel: String) {
     val context = LocalContext.current
-    val callState by voiceChat.callState.collectAsState()
-    val isMuted by voiceChat.isMuted.collectAsState()
+    val callState by voiceChat.callState.collectAsStateWithLifecycle()
+    val isMuted by voiceChat.isMuted.collectAsStateWithLifecycle()
 
     var hasRecordAudioPermission by remember {
         mutableStateOf(
@@ -105,7 +110,24 @@ fun VoiceChatControls(voiceChat: VoiceChatSession, peerLabel: String) {
                     Switch(checked = isMuted, onCheckedChange = { voiceChat.setMuted(it) })
                 }
 
-                val availableOutputs = remember { voiceChat.routing.availableOptions() }
+                // Re-read the available outputs whenever one appears/disappears (e.g. a
+                // Bluetooth headset connecting mid-call), not just once per call.
+                var outputsVersion by remember { mutableIntStateOf(0) }
+                DisposableEffect(Unit) {
+                    val audioManager = context.getSystemService(AudioManager::class.java)
+                    val callback = object : AudioDeviceCallback() {
+                        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
+                            outputsVersion++
+                        }
+
+                        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
+                            outputsVersion++
+                        }
+                    }
+                    audioManager.registerAudioDeviceCallback(callback, null)
+                    onDispose { audioManager.unregisterAudioDeviceCallback(callback) }
+                }
+                val availableOutputs = remember(outputsVersion) { voiceChat.routing.availableOptions() }
                 Row(
                     modifier = Modifier.padding(top = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),

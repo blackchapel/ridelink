@@ -15,12 +15,13 @@ Two roles, one pairing, no server anywhere:
   Google Maps navigation automatically -- no further taps needed, even if
   RideLink is backgrounded.
 - The two phones pair over Google's **Nearby Connections API**
-  (`play-services-nearby`), `Strategy.P2P_POINT_TO_POINT` -- one
-  advertiser (Pillion), one discoverer (Rider). Bluetooth/Wi-Fi only;
-  Nearby Connections itself negotiates a bandwidth upgrade (e.g.
-  BT -> Wi-Fi Direct) after the initial connection. Pairing is per-ride
-  only -- both sides re-discover fresh every session, nothing is
-  remembered device-to-device.
+  (`play-services-nearby`), `Strategy.P2P_CLUSTER` -- one
+  advertiser (Pillion), one discoverer (Rider). The link stays on
+  Bluetooth: this strategy does not upgrade to Wi-Fi Direct (the earlier
+  `P2P_POINT_TO_POINT` could), which is steadier and cooler on a bike.
+  Both phones must run a build with the same strategy or they will not find
+  each other. Pairing is per-ride only -- both sides re-discover fresh every
+  session, nothing is remembered device-to-device.
 - Everything -- route link relay, voice chat signaling, voice audio --
   flows over that same Nearby Connections link. There is no backend, no
   internet/mobile-data dependency, and no third-party server involved at
@@ -50,7 +51,13 @@ Two roles, one pairing, no server anywhere:
   voice-chat offer/accept/decline/end), and a separate per-chunk
   sequence-numbered audio-chunk protocol (`AudioChunk`,
   `sendAudioChunk`/`incomingAudioChunks`) -- see Voice chat below for why
-  audio doesn't use Nearby's STREAM payload type.
+  audio doesn't use Nearby's STREAM payload type. Radio lifecycle:
+  `startAdvertising`/`startDiscovery` are idempotent; advertising and
+  discovery stop once connected (scanning/beaconing all ride is pure
+  drain); `onEndpointFound` is guarded against duplicate requests; an
+  unexpected disconnect or failed attempt restarts the same role with capped
+  exponential backoff (1 s doubling to 30 s, 10 attempts, then
+  `Disconnected`).
 - `notifications/` -- the single persistent notification shown per role,
   both pre- and post-connection:
   - `ConnectionNotificationBuilder.kt` -- stateless; builds the
@@ -83,10 +90,6 @@ Two roles, one pairing, no server anywhere:
     and `AlertPolicy` decides which updates may alert (only "just paired" and
     "incoming request", never while the app is in the foreground; a request
     still ringing when the app is left alerts then).
-  - `NowBarStatusLine.kt` -- small Compose line on both role screens
-    showing `NotificationManager.canPostPromotedNotifications()` and a
-    shortcut to the app's notification settings (`Settings.ACTION_APP_NOTIFICATION_SETTINGS`;
-    the dedicated Live Updates settings action isn't in compileSdk 36).
   - `NotificationActionReceiver.kt` -- manifest-registered
     `BroadcastReceiver` handling every button tap (cancel/accept/
     offer/decline/mute-toggle/cycle-output/end/disconnect), dispatched to the tapped role's
@@ -131,7 +134,11 @@ Two roles, one pairing, no server anywhere:
   - `AudioPipeline.kt` -- `AudioCapture` (AudioRecord, 8kHz mono PCM16,
     hands each ~20ms chunk straight to a callback, no internal
     buffering) and `AudioPlayback` (AudioTrack, fed via a small bounded
-    drop-oldest queue, `PLAYBACK_QUEUE_CAPACITY = 4` / ~80ms).
+    drop-oldest queue, `PLAYBACK_QUEUE_CAPACITY = 4` / ~80ms). Voice is
+    always raw PCM (an Opus experiment was tried and removed -- see
+    `docs/KNOWN_GAPS.md`). At call end `AudioRoutingController.release()`
+    undoes the output choice so a Bluetooth SCO link or forced device does
+    not outlive the call.
   - `AudioRoutingController.kt` -- speaker/earpiece/Bluetooth output
     selection (`AudioManager.setCommunicationDevice` on API 31+, legacy
     speakerphone/SCO APIs below that).
