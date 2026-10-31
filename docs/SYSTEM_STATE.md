@@ -206,7 +206,7 @@ verification -- see `docs/KNOWN_GAPS.md`.
 
 ## Pinned versions (as of this snapshot)
 
-AGP `8.7.2`, Kotlin `2.0.21`, Compose BOM `2024.10.01`,
+AGP `8.9.1`, Gradle `8.11.1`, Kotlin `2.0.21`, Compose BOM `2024.10.01`,
 `play-services-nearby` `19.3.0`, `androidx.core` `1.17.0`,
 `lifecycle-process` `2.8.6`, `compileSdk` `36` / `targetSdk` `35`,
 `minSdk` `26`, JDK `17`.

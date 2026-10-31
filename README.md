@@ -46,8 +46,8 @@ For the technical architecture and module-by-module breakdown, see
 
 ## Building
 
-Requires JDK 17 and the Android SDK (platform 35, build-tools matching
-AGP 8.7.2). Two ways to build:
+Requires JDK 17 and the Android SDK (platform 36, build-tools matching
+AGP 8.9.1). Two ways to build:
 
 - **Locally in Android Studio**: open the project root and let it sync.
   `./gradlew assembleDebug` works with no extra setup.

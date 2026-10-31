@@ -75,9 +75,9 @@ part of the change that touches them -- see `CLAUDE.md`.
   `setShortCriticalText` (androidx.core 1.17, compileSdk 36) and
   `canPostPromotedNotifications()` / `ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS`
   come from the official docs and search results; a first CI build may need
-  a name fix. `compileSdk` 36 is used with AGP 8.7.2 (which predates it)
-  and the unsupported-compileSdk warning is suppressed in
-  `gradle.properties`.
+  a name fix. androidx.core 1.17 itself requires AGP 8.9.1 or higher, so
+  the build uses AGP 8.9.1 / Gradle 8.11.1 (the first attempt on AGP 8.7.2
+  failed the AAR-metadata check before compiling anything).
 - **The pill can't show "Muted" and the timer together.** The status pill
   takes either custom text or the chronometer, so muted shows "Muted" and
   the card's own timer keeps running.
