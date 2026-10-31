@@ -27,7 +27,7 @@ import androidx.lifecycle.LifecycleOwner
  * Whether Android currently lets RideLink post "Live Update" (promoted)
  * notifications, which is what the status-bar pill / Samsung Now Bar need.
  * Shown on the role screens so a test build tells us what the phone does,
- * with a shortcut to the system switch. Hidden on Android below 16.
+ * with a shortcut to RideLink's notification settings, where the Live Updates switch lives. Hidden on Android below 16.
  */
 @Composable
 fun NowBarStatusLine() {
@@ -68,7 +68,7 @@ fun NowBarStatusLine() {
                 onClick = {
                     try {
                         context.startActivity(
-                            Intent(Settings.ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS)
+                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                                 .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                         )
@@ -77,7 +77,7 @@ fun NowBarStatusLine() {
                     }
                 },
             ) {
-                Text("Open Live Update settings")
+                Text("Open notification settings")
             }
         }
     }

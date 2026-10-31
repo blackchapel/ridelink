@@ -76,7 +76,8 @@ Two roles, one pairing, no server anywhere:
     still ringing when the app is left alerts then).
   - `NowBarStatusLine.kt` -- small Compose line on both role screens
     showing `NotificationManager.canPostPromotedNotifications()` and a
-    shortcut to `Settings.ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS`.
+    shortcut to the app's notification settings (`Settings.ACTION_APP_NOTIFICATION_SETTINGS`;
+    the dedicated Live Updates settings action isn't in compileSdk 36).
   - `NotificationActionReceiver.kt` -- manifest-registered
     `BroadcastReceiver` handling every button tap (cancel/accept/
     decline/mute-toggle/cycle-output/end/disconnect), dispatched to the tapped role's
