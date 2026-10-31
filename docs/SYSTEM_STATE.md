@@ -213,9 +213,14 @@ verification -- see `docs/KNOWN_GAPS.md`.
      release).
   3. `notify` (`needs: [build, release]`, `if: always()` -- runs even if
      either prior job failed) -- posts a Discord embed with the **GitHub
-     Release's own URL** (never the Actions run link), using
+     Release's own URL** (never the Actions run link; the field is labelled
+     "Release notes" because that page shows them), using
      `needs.build.result`/`needs.release.result` to report which stage
-     failed, if any.
+     failed, if any. The URL is built in this job from `github.repository`
+     and the tag, never passed as a job output (GitHub drops outputs that
+     contain the masked repo name). If the build stopped only because
+     `CHANGELOG.md` has no section for the version (`build` output
+     `notes_missing`), the message says so and spells out the heading to use.
 - Both workflows' `build` job reads signing material from GitHub secrets
   (`KEYSTORE_BASE64`/`KEYSTORE_PASSWORD`/`KEY_ALIAS`/`KEY_PASSWORD`,
   decoded to a runner temp file); both `notify` jobs post to a

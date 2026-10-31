@@ -158,6 +158,12 @@ part of the change that touches them -- see `CLAUDE.md`.
   tested locally on sample files; here the workflow only exercises it when
   a release is cut. If the first release fails there, look at that step
   before blaming the build.
+- **The Production Release Discord message has only been checked by
+  simulation.** The notify step was run locally for success / missing
+  notes / build failure / release failure, but the real run is the first
+  time `needs.build.outputs.notes_missing` is read from a failed job. If
+  the "no release notes" message does not appear, the generic "failed
+  (build)" one will, and the Actions log still names the step.
 - **Releasing needs one extra PR** (renaming `Unreleased` to the version in
   `CHANGELOG.md`), and the version must be predicted correctly (next patch
   after the highest `v<MAJOR.MINOR>.*` tag). The workflow's error message

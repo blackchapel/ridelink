@@ -10,6 +10,10 @@ jobs:
       version_name: ${{ steps.version.outputs.version_name }}
       version_code: ${{ steps.version.outputs.version_code }}
       tag_name: ${{ steps.version.outputs.tag_name }}
+      # "true" when the build stopped because CHANGELOG.md has no section for
+      # this version, so the Discord message can say that instead of a vague
+      # "build failed".
+      notes_missing: ${{ steps.notes.outputs.missing }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,7 +73,14 @@ jobs:
       - name: Check the release notes exist
         # Fail now, not after the build: CHANGELOG.md must have a section for
         # this version (see .github/scripts/release-notes.sh).
-        run: .github/scripts/release-notes.sh "${{ steps.version.outputs.version_name }}" "${{ runner.temp }}/release-notes.md"
+        id: notes
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+        run: |
+          if ! .github/scripts/release-notes.sh "$VERSION_NAME" "$RUNNER_TEMP/release-notes.md"; then
+            echo "missing=true" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
 
       - name: Decode signing keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "${{ runner.temp }}/release.jks"
@@ -138,13 +149,19 @@ jobs:
           VERSION_NAME: ${{ needs.build.outputs.version_name }}
           VERSION_CODE: ${{ needs.build.outputs.version_code }}
           TAG_NAME: ${{ needs.build.outputs.tag_name }}
+          NOTES_MISSING: ${{ needs.build.outputs.notes_missing }}
           # Built here, not passed as a job output: GitHub drops outputs that
           # contain a secret-looking string, and the repo name matches one.
           RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.build.outputs.tag_name }}
         run: |
+          HINT=""
           if [ "$BUILD_RESULT" = "success" ] && [ "$RELEASE_RESULT" = "success" ]; then
             TITLE="🚀 RideLink production release published"
             COLOR=3066993
+          elif [ "$NOTES_MISSING" = "true" ]; then
+            TITLE="❌ RideLink production release stopped: no release notes for ${VERSION_NAME}"
+            COLOR=15158332
+            HINT="Open a small PR that renames \"## Unreleased\" in CHANGELOG.md to \"## ${VERSION_NAME} ($(date -u +%Y-%m-%d))\" and adds a fresh \"## Unreleased\" above it, merge it, then run Production Release again."
           elif [ "$BUILD_RESULT" != "success" ]; then
             TITLE="❌ RideLink production release failed (build)"
             COLOR=15158332
@@ -162,6 +179,7 @@ jobs:
             --arg version "${VERSION_NAME} (code ${VERSION_CODE})" \
             --arg tag "$TAG_NAME" \
             --arg release "$RELEASE_URL" \
+            --arg hint "$HINT" \
             '{
               embeds: [{
                 title: $title,
@@ -171,7 +189,8 @@ jobs:
                     {name: "Version", value: $version, inline: true},
                     {name: "Tag", value: $tag, inline: true}
                   ]
-                  + (if $release != "" then [{name: "Release", value: $release, inline: false}] else [] end)
+                  + (if $release != "" then [{name: "Release notes", value: $release, inline: false}] else [] end)
+                  + (if $hint != "" then [{name: "What to do", value: $hint, inline: false}] else [] end)
                 )
               }]
             }')
