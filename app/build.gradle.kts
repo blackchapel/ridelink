@@ -16,8 +16,7 @@ val baseVersionName = Properties().apply {
 
 android {
     namespace = "com.ridelink.app"
-    // 36: NotificationCompat's Live Update helpers (promoted ongoing notifications) need it.
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.ridelink.app"
@@ -79,9 +78,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
-    // App-level foreground/background state (see AppVisibility).
-    implementation("androidx.lifecycle:lifecycle-process:2.8.6")
-    implementation("androidx.core:core-ktx:1.17.0")
+    implementation("androidx.core:core-ktx:1.13.1")
 
     // Google Play services: Nearby Connections API (local P2P, no server).
     implementation("com.google.android.gms:play-services-nearby:19.3.0")

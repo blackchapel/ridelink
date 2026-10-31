@@ -6,9 +6,6 @@ import android.content.Context
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 enum class AudioOutputOption { SPEAKER, EARPIECE, BLUETOOTH }
 
@@ -19,39 +16,6 @@ enum class AudioOutputOption { SPEAKER, EARPIECE, BLUETOOTH }
  */
 class AudioRoutingController(context: Context) {
     private val audioManager = context.getSystemService(AudioManager::class.java)
-
-    private val _selected = MutableStateFlow(AudioOutputOption.EARPIECE)
-
-    /**
-     * The output currently in use, for the notification's Output button label.
-     * Kept in step by [select] and re-read from the system by [syncSelected].
-     */
-    val selected: StateFlow<AudioOutputOption> = _selected.asStateFlow()
-
-    /** Re-reads which output the system is actually using; call once a call starts. */
-    @Suppress("DEPRECATION")
-    fun syncSelected() {
-        _selected.value = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            when (audioManager.communicationDevice?.type) {
-                AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> AudioOutputOption.SPEAKER
-                AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> AudioOutputOption.BLUETOOTH
-                else -> AudioOutputOption.EARPIECE
-            }
-        } else {
-            when {
-                audioManager.isBluetoothScoOn -> AudioOutputOption.BLUETOOTH
-                audioManager.isSpeakerphoneOn -> AudioOutputOption.SPEAKER
-                else -> AudioOutputOption.EARPIECE
-            }
-        }
-    }
-
-    /** Switches to the next available output (wrapping), for the notification's Output button. */
-    fun cycleToNext() {
-        val options = availableOptions()
-        if (options.isEmpty()) return
-        select(options[(options.indexOf(_selected.value) + 1) % options.size])
-    }
 
     fun availableOptions(): List<AudioOutputOption> {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -77,7 +41,7 @@ class AudioRoutingController(context: Context) {
             val device = audioManager.availableCommunicationDevices.firstOrNull {
                 it.type == option.toAudioDeviceType()
             }
-            if (device != null && audioManager.setCommunicationDevice(device)) _selected.value = option
+            if (device != null) audioManager.setCommunicationDevice(device)
             return
         }
         when (option) {
@@ -95,7 +59,6 @@ class AudioRoutingController(context: Context) {
                 audioManager.isBluetoothScoOn = true
             }
         }
-        _selected.value = option
     }
 
     @Suppress("DEPRECATION")
