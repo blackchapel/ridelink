@@ -17,20 +17,16 @@ import com.google.android.gms.nearby.connection.Payload
 import com.google.android.gms.nearby.connection.PayloadCallback
 import com.google.android.gms.nearby.connection.PayloadTransferUpdate
 import com.google.android.gms.nearby.connection.Strategy
-import com.ridelink.app.diagnostics.LinkStats
-import com.ridelink.app.settings.RadioMode
-import com.ridelink.app.settings.SettingsPreferences
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.nio.ByteBuffer
 
 /**
  * Rider and pillion are always exactly one pair: one advertiser (pillion),
- * one discoverer (rider). The Nearby [Strategy] is chosen per session from
- * [RadioMode] (Settings), and both phones must use the same one.
+ * one discoverer (rider), connected over Bluetooth ([Strategy.P2P_CLUSTER]).
  */
 sealed class NearbyState {
     data object Idle : NearbyState()
@@ -44,10 +40,9 @@ fun formatPeerName(endpointName: String): String = endpointName.removePrefix("Ri
 
 /**
  * Small control-channel messages, sent as tagged BYTES payloads -- distinct
- * from the audio packets sent via [NearbyManager.sendAudioPacket], which use
- * their own tags ([TAG_AUDIO_PCM], [TAG_AUDIO_OPUS]) and never flow through
- * this envelope (raw audio bytes decoded as UTF-8 text would be silently
- * corrupted).
+ * from the audio chunks sent via [NearbyManager.sendAudioChunk], which use
+ * their own tag ([TAG_AUDIO_CHUNK]) and never flow through this envelope
+ * (raw PCM bytes decoded as UTF-8 text would be silently corrupted).
  */
 sealed class ControlMessage {
     data class RouteLink(val url: String) : ControlMessage()
@@ -85,29 +80,16 @@ sealed class ControlMessage {
     }
 }
 
-// Audio packet wire format: [tag:1][sequence:4, big-endian][payload...].
-internal const val TAG_AUDIO_PCM: Byte = 6
-internal const val TAG_AUDIO_OPUS: Byte = 7
-internal const val AUDIO_HEADER_BYTES = 5
+/** One chunk of the peer's captured mic audio, tagged with its send order. */
+data class AudioChunk(val sequenceNumber: Int, val data: ByteArray)
 
-// Link-latency probe, only sent while Settings' developer stats are open.
-private const val TAG_PING: Byte = 8
-private const val TAG_PONG: Byte = 9
-
-/**
- * Receives each raw audio packet (header included) straight from Nearby's
- * payload callback, on the main thread. Implementations must only hand the
- * packet off -- no decoding or blocking work.
- */
-fun interface AudioPacketSink {
-    fun onAudioPacket(packet: ByteArray)
-}
+private const val TAG_AUDIO_CHUNK: Byte = 6
 
 private enum class RadioRole { ADVERTISER, DISCOVERER }
 
 /**
  * Thin wrapper around Google Play services' Nearby Connections API.
- * Handles the whole handoff over local Bluetooth/Wi-Fi -- no server involved.
+ * Handles the whole handoff over local Bluetooth -- no server involved.
  *
  * Radio lifecycle: advertising/discovery run only until a connection is
  * established, then stop (scanning/beaconing for a whole ride is pure drain).
@@ -139,44 +121,28 @@ class NearbyManager(context: Context) {
     private val _receivedMessages = MutableSharedFlow<ControlMessage>(extraBufferCapacity = 8)
     val receivedMessages: SharedFlow<ControlMessage> = _receivedMessages
 
-    /** Set by the voice-chat session for the duration of a call; audio is dropped when null. */
-    @Volatile
-    var audioSink: AudioPacketSink? = null
-
-    init {
-        current = this
-    }
+    // DROP_OLDEST so a receive-side backlog can never grow into latency --
+    // an unread chunk is stale by the time a newer one arrives anyway.
+    private val _incomingAudioChunks = MutableSharedFlow<AudioChunk>(
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val incomingAudioChunks: SharedFlow<AudioChunk> = _incomingAudioChunks
 
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
             if (payload.type != Payload.Type.BYTES) return
             val bytes = payload.asBytes() ?: return
             if (bytes.isEmpty()) return
-            when (bytes[0]) {
-                TAG_AUDIO_PCM, TAG_AUDIO_OPUS -> {
-                    LinkStats.record {
-                        rxPackets.incrementAndGet()
-                        rxBytes.addAndGet(bytes.size.toLong())
-                    }
-                    audioSink?.onAudioPacket(bytes)
-                }
-                TAG_PING -> {
-                    val reply = bytes.copyOf()
-                    reply[0] = TAG_PONG
-                    connectionsClient.sendPayload(endpointId, Payload.fromBytes(reply))
-                }
-                TAG_PONG -> {
-                    if (bytes.size >= PING_BYTES) {
-                        val sentAt = ByteBuffer.wrap(bytes).getLong(1)
-                        LinkStats.rttMs = (System.nanoTime() - sentAt) / 1_000_000L
-                    }
-                }
-                else -> ControlMessage.decode(bytes)?.let { _receivedMessages.tryEmit(it) }
+            if (bytes[0] == TAG_AUDIO_CHUNK) {
+                decodeAudioChunk(bytes)?.let { _incomingAudioChunks.tryEmit(it) }
+            } else {
+                ControlMessage.decode(bytes)?.let { _receivedMessages.tryEmit(it) }
             }
         }
 
         override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {
-            // Every payload here (control messages, audio packets) is a single
+            // Every payload here (control messages, audio chunks) is a single
             // small BYTES payload -- no progress UI needed.
         }
     }
@@ -212,7 +178,6 @@ class NearbyManager(context: Context) {
 
         override fun onDisconnected(endpointId: String) {
             connecting = false
-            LinkStats.rttMs = -1
             if (connectedEndpointId == endpointId) {
                 connectedEndpointId = null
             }
@@ -287,11 +252,9 @@ class NearbyManager(context: Context) {
             }
     }
 
-    private fun currentStrategy(): Strategy {
-        val efficient = SettingsPreferences.get(appContext).radioMode == RadioMode.EFFICIENT
-        LinkStats.strategy = if (efficient) "P2P_CLUSTER (Efficient)" else "P2P_POINT_TO_POINT (Performance)"
-        return if (efficient) Strategy.P2P_CLUSTER else Strategy.P2P_POINT_TO_POINT
-    }
+    // Bluetooth only: P2P_CLUSTER does not upgrade the link to Wi-Fi Direct, which
+    // keeps the connection stable and cooler on a bike. Both phones must use it.
+    private fun currentStrategy(): Strategy = Strategy.P2P_CLUSTER
 
     private fun scheduleReconnect() {
         if (stopped || role == null) return
@@ -302,7 +265,6 @@ class NearbyManager(context: Context) {
         }
         val delayMs = minOf(RECONNECT_BASE_DELAY_MS shl reconnectAttempt, RECONNECT_MAX_DELAY_MS)
         reconnectAttempt++
-        LinkStats.record { reconnectAttempts.incrementAndGet() }
         _state.value = NearbyState.Searching
         val runnable = Runnable {
             reconnectRunnable = null
@@ -338,30 +300,32 @@ class NearbyManager(context: Context) {
     }
 
     /**
-     * Sends one fully framed audio packet (see the wire-format note above) as
-     * its own small BYTES payload -- fire-and-forget. Chosen over a single
+     * Sends one chunk of captured mic audio as its own small BYTES payload --
+     * fire-and-forget, nothing to cancel once sent. Chosen over a single
      * long-lived Payload.fromStream() specifically so a lost/delayed chunk
      * can never stall everything queued behind it: STREAM payloads are
      * delivered reliably and in order, which is exactly wrong for real-time
      * audio on a link that can momentarily degrade (bike-riding range).
-     * Called from the audio capture thread.
      */
-    fun sendAudioPacket(packet: ByteArray) {
+    fun sendAudioChunk(sequenceNumber: Int, data: ByteArray, length: Int) {
         val endpointId = connectedEndpointId ?: return
-        LinkStats.record {
-            txPackets.incrementAndGet()
-            txBytes.addAndGet(packet.size.toLong())
-        }
-        connectionsClient.sendPayload(endpointId, Payload.fromBytes(packet))
+        val framed = ByteArray(5 + length)
+        framed[0] = TAG_AUDIO_CHUNK
+        framed[1] = (sequenceNumber ushr 24).toByte()
+        framed[2] = (sequenceNumber ushr 16).toByte()
+        framed[3] = (sequenceNumber ushr 8).toByte()
+        framed[4] = sequenceNumber.toByte()
+        System.arraycopy(data, 0, framed, 5, length)
+        connectionsClient.sendPayload(endpointId, Payload.fromBytes(framed))
     }
 
-    /** Link-latency probe for the developer stats screen; the peer answers automatically. */
-    fun sendPing() {
-        val endpointId = connectedEndpointId ?: return
-        val bytes = ByteArray(PING_BYTES)
-        bytes[0] = TAG_PING
-        ByteBuffer.wrap(bytes).putLong(1, System.nanoTime())
-        connectionsClient.sendPayload(endpointId, Payload.fromBytes(bytes))
+    private fun decodeAudioChunk(bytes: ByteArray): AudioChunk? {
+        if (bytes.size <= 5) return null
+        val sequenceNumber = ((bytes[1].toInt() and 0xFF) shl 24) or
+            ((bytes[2].toInt() and 0xFF) shl 16) or
+            ((bytes[3].toInt() and 0xFF) shl 8) or
+            (bytes[4].toInt() and 0xFF)
+        return AudioChunk(sequenceNumber, bytes.copyOfRange(5, bytes.size))
     }
 
     fun stop() {
@@ -375,8 +339,6 @@ class NearbyManager(context: Context) {
         discovering = false
         connecting = false
         connectedEndpointId = null
-        audioSink = null
-        if (current === this) current = null
         _state.value = NearbyState.Idle
     }
 
@@ -384,13 +346,8 @@ class NearbyManager(context: Context) {
         const val SERVICE_ID = "com.ridelink.SERVICE"
         private val LOCAL_ENDPOINT_NAME = "RideLink-${Build.MODEL}"
 
-        private const val PING_BYTES = 9
         private const val MAX_RECONNECT_ATTEMPTS = 10
         private const val RECONNECT_BASE_DELAY_MS = 1_000L
         private const val RECONNECT_MAX_DELAY_MS = 30_000L
-
-        /** The active session's manager, so Settings can probe link latency. At most one exists at a time. */
-        @Volatile
-        var current: NearbyManager? = null
     }
 }

@@ -17,7 +17,10 @@ jobs:
       version_code: ${{ steps.version.outputs.version_code }}
       safe_branch: ${{ steps.version.outputs.safe_branch }}
       short_sha: ${{ steps.version.outputs.short_sha }}
-      artifact_url: ${{ steps.upload.outputs.artifact-url }}
+      # The numeric id, not the URL: GitHub drops any job output that
+      # contains a secret-looking string, and the repo name (ridelink)
+      # matches one, so the URL is rebuilt in the notify job instead.
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
     steps:
       - name: Checkout ${{ inputs.branch }}
         uses: actions/checkout@v4
@@ -95,7 +98,7 @@ jobs:
           VERSION_CODE: ${{ needs.build.outputs.version_code }}
           BRANCH_NAME: ${{ inputs.branch }}
           SHORT_SHA: ${{ needs.build.outputs.short_sha }}
-          ARTIFACT_URL: ${{ needs.build.outputs.artifact_url }}
+          ARTIFACT_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ needs.build.outputs.artifact_id }}
         run: |
           if [ "$BUILD_RESULT" = "success" ]; then
             TITLE="✅ RideLink test release built"
@@ -103,6 +106,7 @@ jobs:
           else
             TITLE="❌ RideLink test release failed"
             COLOR=15158332
+            ARTIFACT_URL=""
           fi
           PAYLOAD=$(jq -n \
             --arg title "$TITLE" \

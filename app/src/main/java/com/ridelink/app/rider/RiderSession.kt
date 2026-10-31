@@ -4,6 +4,8 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
+import com.ridelink.app.crashGuard
 import com.ridelink.app.nearby.ControlMessage
 import com.ridelink.app.nearby.NearbyManager
 import com.ridelink.app.nearby.NearbyState
@@ -31,7 +33,12 @@ object RiderSession {
     var voiceChat: VoiceChatSession? = null
         private set
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + crashGuard("RiderSession"))
+
+    // True from start() until reset(). Lets the UI notice the session ended
+    // while it was on screen (e.g. Disconnect tapped in the notification).
+    private val _isActive = MutableStateFlow(false)
+    val isActive: StateFlow<Boolean> = _isActive.asStateFlow()
 
     private val _connectionState = MutableStateFlow<NearbyState>(NearbyState.Idle)
     val connectionState: StateFlow<NearbyState> = _connectionState.asStateFlow()
@@ -57,6 +64,7 @@ object RiderSession {
         _connectionState.value = NearbyState.Idle
         _latestRouteLink.value = null
         _lastRouteOpenedAt.value = null
+        _isActive.value = true
 
         scope.launch {
             created.state.collect { _connectionState.value = it }
@@ -66,6 +74,7 @@ object RiderSession {
                 if (message is ControlMessage.RouteLink) {
                     // Unconditional -- every route triggers a launch, whether
                     // it's the first of the ride or the fifth.
+                    // Fails quietly (false) rather than crash if nothing can open it.
                     openInGoogleMaps(appContext, message.url)
                     _latestRouteLink.value = message.url
                     _lastRouteOpenedAt.value = System.currentTimeMillis()
@@ -76,6 +85,7 @@ object RiderSession {
     }
 
     fun reset() {
+        _isActive.value = false
         voiceChat?.shutdown()
         voiceChat = null
         manager?.stop()
@@ -85,20 +95,29 @@ object RiderSession {
         _lastRouteOpenedAt.value = null
     }
 
-    fun openInGoogleMaps(context: Context, link: String) {
-        val mapsIntent = Intent(Intent.ACTION_VIEW, Uri.parse(link)).apply {
+    /** True if some app was started for the link; never throws. */
+    fun openInGoogleMaps(context: Context, link: String): Boolean {
+        val uri = runCatching { Uri.parse(link) }.getOrNull() ?: return false
+        val mapsIntent = Intent(Intent.ACTION_VIEW, uri).apply {
             setPackage(GOOGLE_MAPS_PACKAGE)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        try {
+        return try {
             context.startActivity(mapsIntent)
+            true
         } catch (e: ActivityNotFoundException) {
             // Google Maps isn't installed under the expected package name --
             // fall back to letting Android resolve the link generally.
-            val fallbackIntent = Intent(Intent.ACTION_VIEW, Uri.parse(link)).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                true
+            } catch (e2: Exception) {
+                Log.e("RiderSession", "No app can open the route link", e2)
+                false
             }
-            context.startActivity(fallbackIntent)
+        } catch (e: Exception) {
+            Log.e("RiderSession", "Couldn't open the route link", e)
+            false
         }
     }
 }

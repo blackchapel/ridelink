@@ -1,5 +1,10 @@
 package com.ridelink.app.pillion
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,26 +14,58 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ridelink.app.nearby.NearbyState
 import com.ridelink.app.nearby.formatPeerName
+import com.ridelink.app.notifications.NowBarStatusLine
 import com.ridelink.app.voicechat.VoiceChatControls
 
 @Composable
 fun PillionScreen(onBack: () -> Unit) {
     val viewModel: PillionViewModel = viewModel()
+    val context = LocalContext.current
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val isActive by viewModel.isActive.collectAsStateWithLifecycle()
     val capturedLink by viewModel.capturedLink.collectAsStateWithLifecycle()
     val lastSentLink by viewModel.lastSentLink.collectAsStateWithLifecycle()
+
+    // Cosmetic only -- the notification keeps working even if this is
+    // denied, the user just won't see it.
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+
+    // The session can end while this screen is open -- Disconnect tapped in
+    // the notification. Go back to the role picker instead of sitting on a
+    // dead "Starting..." screen.
+    var wasActive by remember { mutableStateOf(false) }
+    LaunchedEffect(isActive) {
+        if (isActive) wasActive = true else if (wasActive) onBack()
+    }
 
     DisposableEffect(Unit) {
         viewModel.start()
         onDispose { }
+    }
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     Column(
@@ -45,6 +82,8 @@ fun PillionScreen(onBack: () -> Unit) {
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(top = 16.dp),
         )
+
+        NowBarStatusLine()
 
         Text(
             text = when {

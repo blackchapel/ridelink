@@ -18,58 +18,120 @@ part of the change that touches them -- see `CLAUDE.md`.
   each other over Bluetooth Classic, one phone runs two simultaneous
   Bluetooth roles on one radio, which can cause scheduling
   contention/jitter. Flagged during design, never specifically tested.
-- **Lossy delivery is a deliberate trade-off, not free.** The
-  sequence-number gap-skip receive policy (`AudioPlayback`) means a
-  lost/delayed chunk is skipped instead of waited for. With Opus, up to 2
-  lost packets are concealed by the decoder; with raw PCM, or a longer
-  gap, it is a brief audible glitch.
-- 8kHz mono PCM16 is a real quality ceiling (telephony-band, not music
-  quality) -- an intentional, conservative starting point given the
-  Bluetooth-at-range throughput unknown, not yet revisited.
-
-## Battery / heat / latency work (Settings, radio mode, Opus)
-
-None of this has been verified on a real device yet -- it was written
-without being able to compile or run it, and the Test Release A/B in the
-README is what turns these into facts.
-
-- **Efficient radio mode (`P2P_CLUSTER`) is unproven for range and
-  latency.** It is meant to stay on a Bluetooth link (no Wi-Fi Direct
-  upgrade), which should be cooler and cheaper, but real riding-distance
-  dropouts or added latency are unknown. Flip to Performance in Settings
-  if it is worse. Which medium Nearby actually picks is not visible in the
-  stats (the bandwidth-info callback was left out because its API could not
-  be verified offline).
-- **Mismatched radio modes look like "never connects".** Phones on
-  different strategies don't discover each other; the Settings text says
-  so, but nothing in the pairing UI detects it.
-- **Pure-Java Opus CPU cost is unmeasured on phones.** Concentus encoded
-  a 20ms frame in roughly 0.2-0.4 ms on a desktop JVM; phones are slower.
-  The stats screen shows the real per-frame encode/decode time, and Raw
-  PCM is one switch away. Opus adds no extra buffering over PCM (20ms
-  frames, synchronous) but its algorithmic delay is not measured.
-- **The 48kHz low-latency playback path is device dependent.** Opening the
-  AudioTrack at the device's native rate is what lets Android grant the
-  low-latency path, but `USAGE_VOICE_COMMUNICATION` may still be routed to
-  a standard path on some devices. The stats show what was granted. Capture
-  stays at 8kHz and its path is not reported.
-- **Mixed-version / mixed-codec pairs.** The receiver decodes both packet
-  tags, so a phone on Raw PCM talks to one on Opus. An older build that
-  doesn't know the Opus tag would just not play it.
+- **No compressed codec -- Opus was tried and removed.** An Opus build
+  (Concentus, ~16 kbps) made the voice break up constantly in real use, to
+  the point the two people could not understand each other, so voice is raw
+  8kHz PCM16 again (~128 kbps). Do not reintroduce a codec without a real
+  device A/B. Because the link is now Bluetooth-only (below), raw PCM's
+  bitrate on a Bluetooth link at riding distance is the thing to watch if
+  breakup is ever reported again.
+- **Bluetooth-only link (`P2P_CLUSTER`) trades peak bandwidth for
+  stability.** Chosen because it was steady in real-world use; there is no
+  Wi-Fi Direct upgrade, so range or throughput limits of the Bluetooth link
+  apply. Phones on an older build with `P2P_POINT_TO_POINT` do not find
+  this build.
 - **Reconnect policy is a guess.** Capped backoff (1 s doubling to 30 s,
   10 attempts, about 3 minutes), then "Disconnected" until the screen is
   reopened. Both phones search again on any drop, including when the other
   side deliberately ends, so the surviving phone searches for a few
-  minutes before giving up.
-- **Effects are not de-duplicated.** AEC/NS are still created explicitly
-  on top of the `VOICE_COMMUNICATION` source; if the platform already
-  applies them this may double-process. The stats show whether each is
-  enabled. Removing them risks echo on the loudspeaker.
-- **Silence suppression (VAD) was deliberately left out** (wind noise at
-  riding speed makes it risky to tune blind). Audio still flows at the
-  full packet rate whenever the mic is unmuted.
-- **Google Maps probably dominates the rider phone's heat** (screen, GPS);
-  this work only reduces RideLink's own share.
+  minutes before giving up; the notification shows **Stop** the whole time
+  so it can be ended without opening the app.
+- **Reconnect and the radio-stop-after-connect changes were only tested as
+  part of the earlier optimisation build** (Bluetooth, Opus); not yet
+  re-checked together with raw PCM and the notification feature.
+- **Lossy delivery is a deliberate trade-off, not free.** The
+  sequence-number gap-skip receive policy (`VoiceChatSession`) means a
+  lost/delayed chunk produces a brief audio glitch/dropout instead of a
+  delayed-but-complete stream. Confirmed acceptable in testing so far, but
+  worth remembering if audio quality complaints come up again.
+- 8kHz mono PCM16 is a real quality ceiling (telephony-band, not music
+  quality) -- an intentional, conservative starting point given the
+  Bluetooth-at-range throughput unknown, not yet revisited.
+
+## Connected-status notification / dynamic foreground-service type
+
+- **Dynamic foreground-service-type change is unverified on a real
+  device.** `RiderForegroundService`/`PillionForegroundService` now add
+  the `microphone` type to themselves mid-life (re-invoking
+  `startForeground()`) for the duration of a call, instead of running a
+  separate `VoiceCallForegroundService` the way this app used to -- a
+  deliberate reversal of an earlier decision that avoided this
+  specifically for lack of real-device verification. If it doesn't
+  behave correctly (the connection destabilizes when a call starts/ends,
+  or the OS rejects/ignores the type change on some version/OEM), the
+  documented fallback is to reintroduce a second, call-scoped foreground
+  service rather than assume the single-service design forward.
+- **Crash fixes in this round come from reading the code, not from a
+  stack trace.** Fixed: voice calls started without the microphone
+  permission or with the mic busy, microphone service type requested from
+  the background (now taken at offer/accept time), Disconnect/End via a
+  start-service intent to a service that may not be running, teardown
+  order, simultaneous Call, endless ringing, a stale screen after
+  Disconnect from the notification, and Maps launch failures. If a crash
+  remains, the role picker's "Share report" gives the stack trace.
+- **If Android refuses the microphone service type** (permission revoked,
+  privacy switch, restricted OEM background rules) the call does not start
+  and a Toast says so; there is no retry or in-notification explanation.
+- **Quiet channel vs. the Samsung Now Bar is unverified.** The connected
+  notification now lives on a LOW-importance channel except for alerts.
+  Live Update promotion only excludes IMPORTANCE_MIN, but if the Now Bar
+  behaves differently the fallback is a silent default-importance channel.
+- **Samsung promoted path (`SAMSUNG_PROMOTED_PATH`) is experimental.**
+  Built from community write-ups of One UI 8.5/9 internals (no `style`
+  extra, `chipBgColor`); not Samsung documentation. It may fix the slow /
+  background-less status-bar pill, or change the Now Bar card. Set the
+  constant to `false` to restore the earlier extras. Do not use the
+  `automation` extra: One UI shows it as "Gemini Intelligence" (Gemini icon,
+  name and rainbow border). Without Samsung approving the package, RideLink
+  appears only when Developer options > "Live notifications for all apps"
+  is on.
+- **Channel-switch + `setOnlyAlertOnce` alerting behavior is not
+  documented with certainty** across Android versions/OEMs -- needs
+  real-device confirmation that "just connected" and "incoming offer"
+  actually produce a heads-up alert rather than a silent update.
+- **An unexpected mid-ride disconnect stays quiet** (reverts to the
+  low-priority pre-connection text) rather than alerting -- a deliberate
+  default matching prior behavior, not something the user has confirmed
+  either way.
+- **Whether the notification reaches Samsung's Now Bar / status pill is
+  unverified.** Android's Live Update rules are met (ongoing, title, no
+  custom view, not MIN importance, permission declared, promotion
+  requested), but Samsung can add its own conditions: reports say One UI 8/8.5
+  limited it to Samsung apps unless Developer options > "Live
+  notifications for all apps" is on, and One UI 9's widening is tied to
+  Android 17's Metric Style (health, timers, travel) -- nothing found says
+  arbitrary apps are let in. The role screens show whether Android allows
+  promotion. If Samsung needs allow-listing by package name, that is a
+  request only the app owner can make to Samsung Developer Support.
+- **Whether Samsung shows third-party action buttons on the Now Bar card
+  is unconfirmed.** If not, the pill/card show status only and the buttons
+  stay in the notification shade.
+- **The Samsung-specific extras are an experiment.** The
+  `android.ongoingActivityNoti.*` keys and the `ongoing_activity`
+  meta-data come from unofficial blogs (one says it "cannot be used for
+  actual implementation"). They are harmless where ignored but unproven.
+- **The Live Update API names now compile, but behaviour on a phone is
+  untested.** `NotificationCompat.Builder.setRequestPromotedOngoing` /
+  `setShortCriticalText` (androidx.core 1.17, compileSdk 36) and
+  `NotificationManager.canPostPromotedNotifications()` built in CI (Test
+  Release #19). `Settings.ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS` does not
+  exist in compileSdk 36, so the role-screen shortcut opens the app's general
+  notification settings instead. androidx.core 1.17 requires AGP 8.9.1 or
+  higher, so the build uses AGP 8.9.1 / Gradle 8.11.1.
+- **The pill can't show "Muted" and the timer together.** The status pill
+  takes either custom text or the chronometer, so muted shows "Muted" and
+  the card's own timer keeps running.
+- **Status-pill words are limited to under 7 characters** ("Linked",
+  "Call", "Voice", "Muted"); longer text may fall back to icon-only.
+- **Output cycling shows the current output, which is read from the
+  system at call start** (no output is forced). Other apps changing the
+  route mid-call aren't tracked until the next tap.
+- **No full-screen-intent / CallStyle for the incoming-offer moment** --
+  deliberately not used so the notification stays eligible for promotion
+  and looks the same on every phone; the plain-button alert may feel
+  weaker than a real incoming-call UI.
+- **"No alert while the app is open" is based on process foreground
+  state.** Opening the share-target screen briefly counts as foreground.
 
 ## Build / process
 
@@ -79,11 +141,11 @@ README is what turns these into facts.
   made from. GitHub Actions (`assembleDebug`/`assembleRelease`) is the
   only real compiler check, which is why diffs need careful manual review
   before every push.
-- **R8 minification is on for release builds** (`isMinifyEnabled` +
-  `isShrinkResources`, rules in `app/proguard-rules.pro`), but it has only
-  ever been checked by CI compiling -- a problem that only appears in the
-  minified build would only show up on a device. It was added as its own
-  commit so it can be reverted independently.
+- **Release builds are minified with R8** (`isMinifyEnabled = true`,
+  `isShrinkResources = true`, `app/proguard-rules.pro`). No keep rules are
+  needed today (Compose, lifecycle and Nearby ship their own); if a release
+  build crashes on something that works in a debug build, suspect a missing
+  keep rule first.
 - **Per-ride-only pairing** -- no "remembered devices" mode; both sides
   re-discover fresh every session by design (v1 scope), not currently
   planned to change.
@@ -108,6 +170,26 @@ README is what turns these into facts.
   conventional-commit linting or similar check that would catch a
   PR that should have bumped the version but didn't (or bumped it when it
   shouldn't have). PATCH itself is fully automatic and not at risk here.
+- **The changelog step in Production Release has not run for real yet.**
+  `.github/scripts/release-notes.sh` is copied from Recipai, where it was
+  tested locally on sample files; here the workflow only exercises it when
+  a release is cut. If the first release fails there, look at that step
+  before blaming the build.
+- **The Production Release Discord message has only been checked by
+  simulation.** The notify step was run locally for success / missing
+  notes / build failure / release failure, but the real run is the first
+  time `needs.build.outputs.notes_missing` is read from a failed job. If
+  the "no release notes" message does not appear, the generic "failed
+  (build)" one will, and the Actions log still names the step.
+- **Releasing needs one extra PR** (renaming `Unreleased` to the version in
+  `CHANGELOG.md`), and the version must be predicted correctly (next patch
+  after the highest `v<MAJOR.MINOR>.*` tag). The workflow's error message
+  prints the heading to use if it was guessed wrong.
+- **Changelog lines depend on discipline.** Nothing checks that a PR added
+  one; `CLAUDE.md` says it must.
+- **The only existing tag is `1.0.0` (no `v` prefix).** The workflow counts
+  only `v<MAJOR.MINOR>.*` tags, so it ignores that one; the first release
+  under the new scheme is `v<MAJOR.MINOR>.0`.
 - **Release note quality depends on PR labeling discipline.** An
   unlabeled PR just lands in "Other Changes" in the categorized release
   notes (see `docs/SYSTEM_STATE.md`) rather than failing anything --
