@@ -11,6 +11,15 @@ and refuses to run if it is missing.
 
 ## Unreleased
 
+### Changed
+- **A proper call screen:** voice chat now looks like a phone call. A green
+  round Call button, pulsing rings and a red Cancel while it rings, and red
+  Decline / green Accept for an incoming call. Once connected you get a
+  running timer and one row of three round buttons: mute or unmute, audio
+  output (call speaker, speaker or Bluetooth, tap to switch) and a red End.
+  The first Call or Accept asks for the microphone and then carries on by
+  itself.
+
 ## 1.1.0 (2026-10-31)
 
 ### Added

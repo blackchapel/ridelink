@@ -151,9 +151,15 @@ physical Android devices:
    app in the background -- the route notification and the request alert
    should appear. Leave the app while a request is still ringing -- it
    should alert then.
-7. Also confirm the existing in-app voice chat controls
-   (`VoiceChatControls`) still work independently of the notification,
-   including the output picker (speaker/earpiece/Bluetooth).
+7. Call screen (in the app, both roles): idle shows a green **Call**
+   button; calling shows pulsing rings and a red **Cancel**; the other phone
+   shows red **Decline** / green **Accept**; once connected there is a timer
+   and one row of three round buttons -- **Mute/Unmute** (icon and label
+   flip, an amber "You are muted" tag appears), **audio output** (tap cycles
+   call speaker / speaker / Bluetooth, the icon follows) and a red **End**.
+   Check it independently of the notification (both should agree), in dark
+   mode, with a large font size, and on a small screen (the page scrolls).
+   The first Call/Accept asks for the microphone, then carries on by itself.
 8. Voice quality: hold a voice chat for several minutes at riding distance
    -- it should be clear and steady (raw PCM over the Bluetooth link; there
    is no codec to switch). Report any breakup.

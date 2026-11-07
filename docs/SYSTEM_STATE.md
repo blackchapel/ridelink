@@ -154,9 +154,21 @@ Two roles, one pairing, no server anywhere:
     at once start the call; an unanswered offer times out after 45 s;
     `shutdown()` cancels the session's scope. There's no separate
     call-specific foreground service anymore (see below).
-  - `VoiceChatControls.kt` -- shared in-app Compose UI for both roles
-    (offer/accept/decline/mute/end), independent of and in addition to
-    the notification controls above.
+  - `VoiceChatControls.kt` -- stateful entry point of the in-app call UI,
+    shared by both roles: owns the microphone permission prompt (the tapped
+    Call/Accept runs once it is granted), the call clock (ticks only while
+    the app is on screen), the audio-output refresh (re-reads the output on
+    `AudioDeviceCallback` events), and wires the buttons to
+    `VoiceChatSession`. Independent of, and in addition to, the
+    notification controls above.
+  - `CallCard.kt` -- the stateless call card it draws: avatar, peer role
+    and device, status line or timer, and round icon buttons (vector
+    drawables `ic_call`, `ic_call_end`, `ic_mic`, `ic_mic_off`,
+    `ic_volume_up`, `ic_phone_earpiece`, `ic_bluetooth_audio`, `ic_person`):
+    green Call / Accept, red Cancel / Decline / End, tonal Mute and Output
+    (solid when muted). Light and dark palettes are chosen from the Material
+    surface, since the app has its own dark toggle. Previews cover every
+    state for caller and receiver.
 - `ui/theme/` -- `Theme.kt` (Compose theme) and `ThemePreferences.kt`
   (persisted light/dark choice, defaulting to system theme).
 

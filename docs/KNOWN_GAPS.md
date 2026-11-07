@@ -151,6 +151,22 @@ part of the change that touches them -- see `CLAUDE.md`.
   re-discover fresh every session by design (v1 scope), not currently
   planned to change.
 
+## Call screen
+
+- **Two "End" controls on the role screens.** The red End button on the
+  call card hangs up the call; the plain "End" text button under the status
+  text ends the whole ride session. Their meanings differ but the words do
+  not (renaming the text button, e.g. "End ride", is a possible follow-up).
+- **Call card is untested on real devices.** Layout was designed from a
+  mock and compiled in CI only: check the small-screen scroll, large font
+  sizes, dark mode and the Bluetooth output icon on phones.
+- **The output icon is re-read from the system on audio device changes**
+  (and at call start), not on every other app's route change; if another app
+  changes the route mid-call the icon updates on the next device event or tap.
+- **Ring animation is a simple pulse** and is frozen when the system
+  animation scale is 0 (reduce motion); there is no sound or vibration for a
+  ringing call in the app itself (the notification handles alerting).
+
 ## Release pipeline
 
 - **Version code is a branch's commit count, so a build can fail to update

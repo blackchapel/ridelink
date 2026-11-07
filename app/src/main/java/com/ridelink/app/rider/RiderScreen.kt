@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -74,6 +76,9 @@ fun RiderScreen(onBack: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // Scrolls: the call card is taller than the old text buttons, and a
+            // small screen or a large font size must not clip it.
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -110,9 +115,14 @@ fun RiderScreen(onBack: () -> Unit) {
             Text("End")
         }
 
-        if (connectionState is NearbyState.Connected) {
+        val connected = connectionState as? NearbyState.Connected
+        if (connected != null) {
             viewModel.voiceChat?.let { voiceChat ->
-                VoiceChatControls(voiceChat = voiceChat, peerLabel = "your pillion")
+                VoiceChatControls(
+                    voiceChat = voiceChat,
+                    peerRole = "Pillion",
+                    peerDevice = formatPeerName(connected.endpointName),
+                )
             }
         }
     }
